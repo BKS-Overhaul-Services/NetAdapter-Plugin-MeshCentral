@@ -342,8 +342,11 @@ var handlers = {
     // ================================================================
     inventory: function (nodeid, reqid, params, res) {
         workerRun(
+            // ⚠️ O worker serializa a variável $out — o wrapper final DEVE ser
+            // atribuído a $out (RHS é avaliado antes da reatribuição). Um wrapper
+            // em $out2 nunca sairia e o handler receberia só result[0] (1 placa).
             "$out = @(); " +
-            "$ads = @(Get-NetAdapter -ErrorAction SilentlyContinue); " +
+            "$ads = @(Get-NetAdapter -IncludeHidden -ErrorAction SilentlyContinue); " +
             "foreach ($a in $ads) { " +
             "  $ifi = Get-NetIPInterface -InterfaceIndex $a.ifIndex -AddressFamily IPv4 -ErrorAction SilentlyContinue; " +
             "  $ips = @(Get-NetIPAddress -InterfaceIndex $a.ifIndex -AddressFamily IPv4 -ErrorAction SilentlyContinue); " +
@@ -368,10 +371,12 @@ var handlers = {
             "    driverDate=[string]$a.DriverDate; driverProvider=$a.DriverProvider; driverInfoString=$a.DriverInformation " +
             "  } " +
             "} " +
-            "$out2 = [pscustomobject]@{ adapters=$out; hostname=$env:COMPUTERNAME } ",
+            "$out = [pscustomobject]@{ adapters=$out; hostname=$env:COMPUTERNAME } ",
             function (r) {
                 if (r.ok && (!r.result || !r.result.length || !r.result[0])) { res({ ok: false, error: 'inventario vazio (Get-NetAdapter falhou?)' }); return; }
                 if (r.ok) r.result = r.result[0];
+                // defensivo: 1 placa pode chegar como objeto (ConvertTo-Json unwrap)
+                if (r.ok && r.result && r.result.adapters && !Array.isArray(r.result.adapters)) r.result.adapters = [r.result.adapters];
                 res(r);
             }
         );

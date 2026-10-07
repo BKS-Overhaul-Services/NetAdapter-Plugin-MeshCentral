@@ -1,5 +1,14 @@
 # Changelog — NetAdapter Plugin MeshCentral
 
+## 1.0.2 (2026-10-07)
+### Fixed
+- **Inventário devolvia só 1 placa (a primeira)** (`modules_meshcore/netadapter.js`): o worker PS serializa sempre a variável `$out`, mas o wrapper `{adapters, hostname}` era montado em `$out2` — que nunca era serializado. O agente devolvia o array de placas cru, o handler fazia `result[0]` e entregava apenas a 1ª placa ao server. Fix: wrapper reatribuído a `$out` (RHS avaliado antes da reatribuição) + normalização defensiva de `adapters` no callback do handler (unwrap de 1 elemento pelo ConvertTo-Json). Versão server-side do mesmo bug era mascarada pela v1.0.1.
+- **Placas ocultas não apareciam**: `Get-NetAdapter -IncludeHidden` no inventário (WAN Miniports, bridges e outros adapters ocultos agora aparecem, marcados quando virtuais).
+
+### Notes
+- Mudança em `modules_meshcore/` — requer **restart do MeshCentral + reconexão dos agentes**.
+- Deploy parcial v1.0.1: a correção do catálogo funcionou no server (erro sumiu), mas o bug do `$out2` só aparece no agente — por isso "1 placa" persistiu após o reload. Os dois bugs se mascaravam mutuamente.
+
 ## 1.0.1 (2026-10-07)
 ### Fixed
 - **Catálogo explodia com 1 única placa** (`netadapter.js` + `views/device.handlebars`): quirk do `ConvertTo-Json` do PS — array de 1 elemento chega desserializado como **objeto** (não array). Com uma só placa (ex: apenas `Ethernet` na BR-25005), `result.adapters` não era array e `upsertAdapters`/`renderAdapters` falhavam com `(list || []).forEach is not a function` em todo inventário. Fix: normalização `if (!Array.isArray(x)) x = [x]` nos 3 pontos de entrada (server no handler do `agentResult`, frontend no `handleResult` e dentro do próprio `renderAdapters` — defesa em profundidade). Lição já conhecida do Spooler (§6.3) aplicada ao campo aninhado.
