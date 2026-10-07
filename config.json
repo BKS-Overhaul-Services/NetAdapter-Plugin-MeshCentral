@@ -1,0 +1,18 @@
+{
+  "name": "NetAdapter — Gerenciador de Placas de Rede",
+  "shortName": "netadapter",
+  "version": "1.0.0",
+  "author": "Misael Filho",
+  "description": "Gerenciamento centralizado de placas de rede Windows via MeshCentral: inventário completo (status, MAC, link, IP, gateway, DNS, DHCP, perfil), configuração de IP estático/DHCP, DNS, sufixo, MTU, perfil de rede (público/privado), NetBIOS, MAC (spoof/reset), renomear, ativar/desativar, bindings (IPv6 etc.), propriedades avançadas do driver (jumbo frames, offloads, speed/duplex), drivers (listagem/instalação via INF) e diagnóstico (ping, rotas, vizinhança ARP, flush/register DNS). Auditoria de todas as operações.",
+  "hasAdminPanel": true,
+  "homepage": "https://github.com/BKS-Overhaul-Services/NetAdapter-Plugin-MeshCentral",
+  "changelogUrl": "https://raw.githubusercontent.com/BKS-Overhaul-Services/NetAdapter-Plugin-MeshCentral/main/changelog.md",
+  "configUrl": "https://raw.githubusercontent.com/BKS-Overhaul-Services/NetAdapter-Plugin-MeshCentral/main/config.json",
+  "downloadUrl": "https://github.com/BKS-Overhaul-Services/NetAdapter-Plugin-MeshCentral/archive/refs/heads/main.zip",
+  "repository": {
+    "type": "git",
+    "url": "https://github.com/BKS-Overhaul-Services/NetAdapter-Plugin-MeshCentral.git"
+  },
+  "versionHistoryUrl": "https://api.github.com/repos/BKS-Overhaul-Services/NetAdapter-Plugin-MeshCentral/tags",
+  "meshCentralCompat": ">=1.0.0"
+}

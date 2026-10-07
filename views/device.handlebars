@@ -1,0 +1,658 @@
+<html>
+<head>
+<meta charset="utf-8">
+<title>{{nodeName}} — Placas de Rede</title>
+<style>
+*{box-sizing:border-box;margin:0;padding:0}
+body{font-family:"Trebuchet MS",Arial,Helvetica,sans-serif;background:#d3d9d6;color:#000;padding:12px;font-size:13px;line-height:1.35}
+.header{display:flex;align-items:flex-start;justify-content:space-between;gap:10px;flex-wrap:wrap;margin-bottom:10px}
+.header h1{font-size:18px;font-weight:700;color:#003366}
+.header .sub{color:#444;font-size:12px;margin-top:2px}
+.stats{display:flex;gap:6px;flex-wrap:wrap}
+.stat{background:#fff;border:1px solid #aaa;border-radius:3px;padding:8px 12px;min-width:88px}
+.stat .n{font-size:18px;font-weight:700;color:#003366}
+.stat .l{font-size:10px;color:#666;text-transform:uppercase;margin-top:1px}
+.panel{background:#fff;border:1px solid #aaa;border-radius:3px;padding:10px;margin-bottom:10px}
+.panel-title{background:#c0c0c0;color:#000;font-size:12px;font-weight:700;padding:5px 8px;margin:-10px -10px 10px -10px;border-bottom:1px solid #aaa}
+.toolbar{display:flex;flex-wrap:wrap;gap:6px;align-items:center;margin-bottom:8px}
+.btn{font-family:inherit;font-size:12px;border:1px solid #808080;background:#f0f0f0;color:#000;padding:5px 12px;border-radius:2px;cursor:pointer}
+.btn:hover{background:#e4e4e4}
+.btn-primary{background:#003366;color:#fff;border-color:#002244}
+.btn-primary:hover{background:#004080}
+.btn-danger{background:#c62828;color:#fff;border-color:#8e1b1b}
+.btn-danger:hover{background:#a02222}
+.btn-sm{font-size:11px;padding:3px 8px}
+.btn:disabled{opacity:.5;cursor:not-allowed}
+select,input[type=text],input[type=number]{font-family:inherit;font-size:12px;border:1px solid #808080;background:#fff;color:#000;padding:4px 6px;border-radius:2px}
+.tabs{display:flex;gap:0;margin-bottom:8px;border-bottom:2px solid #003366;flex-wrap:wrap}
+.tabs button{border:1px solid #808080;border-bottom:none;background:#606060;color:#fff;padding:6px 14px;cursor:pointer;font-family:inherit;font-size:12px;margin-right:2px;border-radius:4px 4px 0 0}
+.tabs button.active{background:#003366;border-color:#003366;font-weight:700}
+.pane{display:none}.pane.active{display:block}
+table.tbl{width:100%;border-collapse:collapse;font-size:12px}
+table.tbl th{background:#aaa;color:#000;font-weight:700;text-align:left;padding:5px 7px;border:1px solid #999}
+table.tbl td{padding:5px 7px;border-bottom:1px solid #ddd;vertical-align:middle}
+table.tbl tr:nth-child(even) td{background:#f4f6f5}
+table.tbl tr:hover td{background:#e8f0f8}
+.badge{display:inline-block;font-size:10px;padding:1px 6px;border-radius:999px;background:#ddd;color:#333;font-weight:700}
+.badge.ok{background:#c8e6c9;color:#1b5e20}
+.badge.warn{background:#fff3cd;color:#7a5c00}
+.badge.err{background:#ffcdd2;color:#8e1b1b}
+.badge.off{background:#e0e0e0;color:#555}
+.muted{color:#666;font-size:11px}
+.empty,.loading{text-align:center;padding:24px;color:#666}
+.field{display:flex;flex-direction:column;gap:3px;margin-bottom:8px}
+.field label{font-size:11px;font-weight:700;color:#444}
+.grid2{display:grid;grid-template-columns:1fr 1fr;gap:10px}
+@media(max-width:900px){.grid2{grid-template-columns:1fr}}
+dialog{border:1px solid #808080;border-radius:4px;padding:0;max-width:640px;width:92%;box-shadow:0 4px 24px rgba(0,0,0,.4)}
+dialog::backdrop{background:rgba(0,0,0,.5)}
+.dlg-head{background:#003366;color:#fff;padding:8px 12px;font-weight:700;font-size:13px;display:flex;justify-content:space-between;align-items:center}
+.dlg-body{padding:12px;max-height:70vh;overflow:auto}
+.dlg-foot{padding:10px 12px;border-top:1px solid #ccc;display:flex;gap:8px;justify-content:flex-end;background:#f4f6f5}
+pre.out{background:#1e1e1e;color:#d4d4d4;padding:10px;border-radius:3px;font-family:Consolas,monospace;font-size:11px;white-space:pre-wrap;max-height:320px;overflow:auto}
+#dbgToggle{cursor:pointer;font-size:11px;color:#003366;user-select:none;margin-top:10px;text-decoration:underline}
+#debug{display:none;background:#fff8e1;border:1px solid #e0c060;color:#333;padding:6px;margin-top:4px;font-size:10px;font-family:Consolas,monospace;max-height:140px;overflow:auto;border-radius:2px;white-space:pre-wrap}
+.toast{position:fixed;bottom:14px;right:14px;background:#003366;color:#fff;padding:10px 16px;border-radius:4px;font-size:12px;box-shadow:0 2px 12px rgba(0,0,0,.4);z-index:99;display:none;max-width:460px}
+.toast.err{background:#c62828}
+</style>
+</head>
+<body>
+<div class="header">
+  <div>
+    <h1>Placas de Rede — {{nodeName}}</h1>
+    <div class="sub">Inventário · IP/DNS/DHCP · MAC · avançado · bindings · drivers · diagnóstico</div>
+  </div>
+  <div class="stats">
+    <div class="stat"><div class="n" id="sAdapters">—</div><div class="l">Placas</div></div>
+    <div class="stat"><div class="n" id="sUp">—</div><div class="l">Ativas (Up)</div></div>
+    <div class="stat"><div class="n" id="sDisabled">—</div><div class="l">Desativadas</div></div>
+  </div>
+</div>
+
+<div class="tabs">
+  <button class="active" id="tAdapters" onclick="switchTab('adapters')">Placas</button>
+  <button id="tIp" onclick="switchTab('ip')">IP &amp; DNS</button>
+  <button id="tAdv" onclick="switchTab('adv')">Avançado</button>
+  <button id="tDrv" onclick="switchTab('drv')">Drivers</button>
+  <button id="tDiag" onclick="switchTab('diag')">Diagnóstico</button>
+  <button id="tAudit" onclick="switchTab('audit')">Auditoria</button>
+</div>
+
+<!-- ===== PLACAS ===== -->
+<div id="pane-adapters" class="pane active">
+  <div class="panel">
+    <div class="panel-title">Placas de rede</div>
+    <div class="toolbar">
+      <button class="btn btn-primary" onclick="refreshInventory()">Atualizar inventário</button>
+      <button class="btn btn-sm" id="dbgBtn" onclick="toggleAgentDebug()">Debug agente: OFF</button>
+      <span class="muted" id="invInfo"></span>
+    </div>
+    <div id="adapterList"><div class="empty">Clique em "Atualizar inventário".</div></div>
+  </div>
+</div>
+
+<!-- ===== IP & DNS ===== -->
+<div id="pane-ip" class="pane">
+  <div class="panel">
+    <div class="panel-title">Configuração IP / DNS por placa</div>
+    <div class="toolbar">
+      <select id="ipAdapter" style="min-width:280px" onchange="renderIpDetail()"></select>
+      <button class="btn btn-primary" onclick="showIpDlg()">Configurar IP estático…</button>
+      <button class="btn" onclick="doDhcp()">Voltar para DHCP</button>
+      <span class="muted" id="ipInfo"></span>
+    </div>
+    <div id="ipDetail"><div class="empty">—</div></div>
+  </div>
+  <div class="panel">
+    <div class="panel-title">Cache / registro DNS</div>
+    <div class="toolbar">
+      <button class="btn" onclick="doFlushDns()">Limpar cache DNS</button>
+      <button class="btn" onclick="doRegisterDns()">Registrar no DNS (ipconfig /registerdns)</button>
+      <span class="muted" id="dnsInfo"></span>
+    </div>
+  </div>
+</div>
+
+<!-- ===== AVANÇADO ===== -->
+<div id="pane-adv" class="pane">
+  <div class="panel">
+    <div class="panel-title">Propriedades avançadas do driver (jumbo, offloads, duplex…)</div>
+    <div class="toolbar">
+      <select id="advAdapter" style="min-width:280px" onchange="loadAdvProps();loadBindings()"></select>
+      <span class="muted" id="advInfo"></span>
+    </div>
+    <div id="advProps"><div class="empty">—</div></div>
+  </div>
+  <div class="grid2">
+    <div class="panel">
+      <div class="panel-title">Configurações da placa</div>
+      <div id="advCard"><div class="empty">—</div></div>
+    </div>
+    <div class="panel">
+      <div class="panel-title">Bindings (protocolos da placa)</div>
+      <div id="bindingList"><div class="empty">—</div></div>
+    </div>
+  </div>
+</div>
+
+<!-- ===== DRIVERS ===== -->
+<div id="pane-drv" class="pane">
+  <div class="panel">
+    <div class="panel-title">Drivers de rede instalados (Win32_PnPSignedDriver)</div>
+    <div class="toolbar"><button class="btn btn-primary" onclick="loadDrivers()">Listar drivers</button><span class="muted" id="drvInfo"></span></div>
+    <div id="driverList"><div class="empty">—</div></div>
+  </div>
+  <div class="panel">
+    <div class="panel-title">Instalar driver a partir de .INF (no cliente)</div>
+    <div class="toolbar">
+      <input type="text" id="infPath" placeholder="C:\drivers\nic\oem.inf" style="min-width:340px">
+      <button class="btn btn-primary" onclick="doInstallDriver()">Instalar via pnputil</button>
+      <span class="muted">Executa <b>pnputil /add-driver &lt;inf&gt; /install</b> no cliente e devolve a saída.</span>
+    </div>
+  </div>
+</div>
+
+<!-- ===== DIAGNÓSTICO ===== -->
+<div id="pane-diag" class="pane">
+  <div class="panel">
+    <div class="panel-title">Ping (a partir do cliente)</div>
+    <div class="toolbar">
+      <input type="text" id="pingHost" placeholder="host ou IP" style="min-width:220px">
+      <select id="pingCount"><option>4</option><option>2</option><option>6</option><option>10</option></select>
+      <button class="btn btn-primary" onclick="doPing()">Ping</button>
+    </div>
+    <pre class="out" id="pingOut" style="display:none"></pre>
+  </div>
+  <div class="grid2">
+    <div class="panel">
+      <div class="panel-title">Tabela de rotas (IPv4)</div>
+      <div class="toolbar"><button class="btn btn-primary btn-sm" onclick="loadRoutes()">Ver rotas</button></div>
+      <div id="routeList"><div class="empty">—</div></div>
+    </div>
+    <div class="panel">
+      <div class="panel-title">Vizinhança ARP</div>
+      <div class="toolbar"><button class="btn btn-primary btn-sm" onclick="loadNeighbors()">Ver ARP</button></div>
+      <div id="neighborList"><div class="empty">—</div></div>
+    </div>
+  </div>
+</div>
+
+<!-- ===== AUDITORIA ===== -->
+<div id="pane-audit" class="pane">
+  <div class="panel">
+    <div class="panel-title">Auditoria de operações</div>
+    <div class="toolbar"><button class="btn btn-primary" onclick="loadAudit()">Atualizar</button></div>
+    <div id="auditList"><div class="empty">—</div></div>
+  </div>
+</div>
+
+<div id="dbgToggle" onclick="var e=document.getElementById('debug');e.style.display=e.style.display==='none'?'block':'none'">Debug</div>
+<div id="debug">aguardando...</div>
+<div class="toast" id="toast"></div>
+
+<!-- DIALOG: configurar IP estático -->
+<dialog id="dlgIp">
+  <div class="dlg-head"><span>IP estático — <span id="ipDlgName"></span></span><button class="btn btn-sm" onclick="closeDlg('dlgIp')">✕</button></div>
+  <div class="dlg-body">
+    <div class="grid2">
+      <div class="field"><label>Endereço IP *</label><input type="text" id="ipAddr" placeholder="192.168.0.50"></div>
+      <div class="field"><label>Prefixo (máscara CIDR) *</label><input type="number" id="ipPrefix" value="24" min="1" max="32"></div>
+    </div>
+    <div class="field"><label>Gateway (opcional)</label><input type="text" id="ipGw" placeholder="192.168.0.1"></div>
+    <div class="grid2">
+      <div class="field"><label>DNS primário</label><input type="text" id="ipDns1" placeholder="192.168.0.1"></div>
+      <div class="field"><label>DNS secundário</label><input type="text" id="ipDns2" placeholder="8.8.8.8"></div>
+    </div>
+    <p class="muted">⚠️ Se a placa for a rota ativa do agente, a conexão pode cair durante a operação. A verificação pós-ação espera o IP ficar visível (até 15s).</p>
+  </div>
+  <div class="dlg-foot">
+    <button class="btn" onclick="closeDlg('dlgIp')">Cancelar</button>
+    <button class="btn btn-primary" id="ipBtn" onclick="doSetIp()">Aplicar</button>
+  </div>
+  <div class="muted" id="ipStatus" style="padding:0 12px 10px"></div>
+</dialog>
+
+<!-- DIALOG: MAC -->
+<dialog id="dlgMac">
+  <div class="dlg-head"><span>MAC — <span id="macDlgName"></span></span><button class="btn btn-sm" onclick="closeDlg('dlgMac')">✕</button></div>
+  <div class="dlg-body">
+    <div class="field"><label>Novo MAC (12 hex, ex: 00155D8B2A01)</label><input type="text" id="macAddr" placeholder="00155D8B2A01" maxlength="17"></div>
+    <p class="muted">⚠️ Aplica via registro (NetworkAddress) + restart da placa. Alguns drivers não suportam; se for a placa ativa do agente, a conexão pode cair. Use "Restaurar original" para remover o spoof.</p>
+  </div>
+  <div class="dlg-foot">
+    <button class="btn" onclick="closeDlg('dlgMac')">Cancelar</button>
+    <button class="btn" id="macResetBtn" onclick="doResetMac()">Restaurar original</button>
+    <button class="btn btn-primary" id="macBtn" onclick="doSetMac()">Aplicar MAC</button>
+  </div>
+  <div class="muted" id="macStatus" style="padding:0 12px 10px"></div>
+</dialog>
+
+<!-- DIALOG: propriedade avançada -->
+<dialog id="dlgAdv">
+  <div class="dlg-head"><span>Propriedade — <span id="advDlgName"></span></span><button class="btn btn-sm" onclick="closeDlg('dlgAdv')">✕</button></div>
+  <div class="dlg-body">
+    <div class="field"><label>Propriedade</label><input type="text" id="advDisp" readonly></div>
+    <div class="field"><label>Valor atual</label><input type="text" id="advCur" readonly></div>
+    <div class="field"><label>Novo valor</label><select id="advVal"></select><input type="text" id="advValTxt" style="display:none;margin-top:4px" placeholder="valor do registro"></div>
+    <div class="muted" id="advValid"></div>
+    <p class="muted">⚠️ Valores incorretos podem degradar ou derrubar o link (ex.: duplex errado). A placa pode reiniciar.</p>
+  </div>
+  <div class="dlg-foot">
+    <button class="btn" onclick="closeDlg('dlgAdv')">Cancelar</button>
+    <button class="btn btn-primary" id="advBtn" onclick="doSetAdv()">Aplicar</button>
+  </div>
+  <div class="muted" id="advStatus" style="padding:0 12px 10px"></div>
+</dialog>
+
+<!-- DIALOG: renomear -->
+<dialog id="dlgRename">
+  <div class="dlg-head"><span>Renomear placa</span><button class="btn btn-sm" onclick="closeDlg('dlgRename')">✕</button></div>
+  <div class="dlg-body">
+    <div class="field"><label>Nome atual</label><input type="text" id="renOld" readonly></div>
+    <div class="field"><label>Novo nome *</label><input type="text" id="renNew"></div>
+  </div>
+  <div class="dlg-foot">
+    <button class="btn" onclick="closeDlg('dlgRename')">Cancelar</button>
+    <button class="btn btn-primary" onclick="doRename()">Renomear</button>
+  </div>
+</dialog>
+
+<script>
+var nodeid='{{nodeid}}', nodeName='{{nodeName}}';
+var ms=(typeof parent!=='undefined'&&parent.meshserver)||window.meshserver;
+var D=[];
+var _adapters=[], _drivers=[], _bindings=[], _ops={};
+
+function dlog(){var a=Array.prototype.slice.call(arguments);D.push(new Date().toLocaleTimeString()+' '+a.join(' '));var e=document.getElementById('debug');if(e)e.innerHTML=D.slice(-80).join('\n');}
+function esc(s){return String(s==null?'':s).replace(/&/g,'&amp;').replace(/</g,'&lt;').replace(/>/g,'&gt;').replace(/"/g,'&quot;');}
+function $(id){return document.getElementById(id);}
+function toast(msg,err){var t=$('toast');t.textContent=msg;t.className='toast'+(err?' err':'');t.style.display='block';clearTimeout(t._h);t._h=setTimeout(function(){t.style.display='none';},6000);}
+function closeDlg(id){var d=$(id);if(d.open)d.close();}
+function dlgBusy(btnId,statusId,busy,msg){var b=$(btnId),s=$(statusId);if(b)b.disabled=busy;if(s){s.textContent=msg||'';s.style.color=busy?'#003366':'#c62828';}}
+function statusBadge(st){st=String(st||'');if(st==='Up')return'<span class="badge ok">Up</span>';if(st==='Disconnected')return'<span class="badge warn">Sem link</span>';if(st==='Disabled')return'<span class="badge off">Desativada</span>';if(!st)return'<span class="badge">—</span>';return'<span class="badge err">'+esc(st)+'</span>';}
+
+/* ===== WS ===== */
+if(ms&&ms.socket){
+  ms.socket.addEventListener('message',function(event){
+    try{
+      var d=JSON.parse(event.data);
+      if(d.action==='plugin'&&d.plugin==='netadapter'&&d.method==='agentResult'){
+        if(d.phase==='started'){handleStarted(d.op);return;}
+        dlog('WS result', d.op, 'ok='+(d.ok===true));
+        handleResult(d);
+        return;
+      }
+      if(d.action==='plugin'&&d.plugin==='netadapter'&&d.method==='audit'){renderAudit(d.data||[]);return;}
+      if(d.action==='plugin'&&d.plugin==='netadapter'&&d.method==='catalog'){/* não usado no device */}
+    }catch(e){}
+  });
+  dlog('socket hooked');
+} else dlog('ms/socket não disponível');
+
+function send(action,params){ if(ms){ ms.send({action:'plugin',plugin:'netadapter',pluginaction:action,nodeid:nodeid,params:params||{}}); } else toast('Sem conexão',true); }
+
+function handleStarted(op){
+  if(op==='setIp')dlgBusy('ipBtn','ipStatus',true,'Na fila do agente — aplicando IP (a conexão pode oscilar)...');
+  if(op==='setMac')dlgBusy('macBtn','macStatus',true,'Na fila do agente — aplicando MAC + restart da placa...');
+  if(op==='setDhcp'||op==='setDns'||op==='setDnsSuffix')$('ipInfo').textContent='Executando no cliente...';
+  if(op==='installDriver')$('drvInfo').textContent='Instalando driver (pnputil — pode levar até 2min)...';
+}
+
+function handleResult(d){
+  var op=d.op; setBusy(op,false);
+  if(!d.ok){
+    toast(op+': '+(d.error||'erro'),true);
+    if(op==='setIp')dlgBusy('ipBtn','ipStatus',false,'Erro: '+(d.error||'falha'));
+    if(op==='setMac')dlgBusy('macBtn','macStatus',false,'Erro: '+(d.error||'falha'));
+    if(op==='inventory'){$('invInfo').textContent='erro: '+d.error;}
+    return;
+  }
+  var r=d.result;
+  switch(op){
+    case 'inventory': renderAdapters((r&&r.adapters)||[]); break;
+    case 'setIp': dlgBusy('ipBtn','ipStatus',false,''); closeDlg('dlgIp'); toast('IP aplicado: '+(r&&r.ip?r.ip+'/'+r.prefix:'ok')); refreshInventory(); break;
+    case 'setDhcp': $('ipInfo').textContent='DHCP: '+(typeof r==='string'?r:(r&&r.name)); toast('DHCP reativado'+(typeof r==='string'?(': '+r):'')); renderIpDetail(); refreshInventory(); break;
+    case 'setDns': $('ipInfo').textContent='DNS aplicado'; toast('DNS aplicado'); renderIpDetail(); break;
+    case 'setDnsSuffix': $('ipInfo').textContent='Sufixo DNS aplicado'; toast('Sufixo DNS aplicado'); break;
+    case 'renameAdapter': toast('Placa renomeada'); closeDlg('dlgRename'); refreshInventory(); break;
+    case 'enableAdapter': case 'disableAdapter': toast((r&&r.enabled===false?'Placa desativada':'Placa ativada')+(typeof r==='string'&&(r!=='Up'&&r!=='')?': '+r:'')); refreshInventory(); break;
+    case 'setMac': dlgBusy('macBtn','macStatus',false,''); closeDlg('dlgMac'); toast('MAC aplicado: '+(r&&r.mac)); refreshInventory(); break;
+    case 'resetMac': dlgBusy('macBtn','macStatus',false,''); closeDlg('dlgMac'); toast('MAC original restaurado'); refreshInventory(); break;
+    case 'setMtu': renderAdvCard(); toast('MTU: '+(typeof r==='string'?r:'ok')); break;
+    case 'setProfile': renderAdvCard(); toast('Perfil: '+(typeof r==='string'?r:'ok')); break;
+    case 'setNetbios': renderAdvCard(); toast('NetBIOS: '+(typeof r==='string'?r:'ok')); break;
+    case 'advancedProps': renderAdvProps(r||[]); break;
+    case 'setAdvancedProp': closeDlg('dlgAdv'); toast('Propriedade: '+(typeof r==='string'?r:'ok')); loadAdvProps(); break;
+    case 'listBindings': renderBindings(r||[]); break;
+    case 'setBindingState': toast('Binding: '+(typeof r==='string'?r:'ok')); loadBindings(); break;
+    case 'listDrivers': renderDrivers(r||[]); break;
+    case 'installDriver': $('drvInfo').textContent=''; toast('Driver instalado'); loadDrivers(); break;
+    case 'ping': var o=(r&&r.output)||String(r||''); $('pingOut').style.display='block'; $('pingOut').textContent=String(o||''); break;
+    case 'getRoutes': renderRoutes(r||[]); break;
+    case 'getNeighbors': renderNeighbors(r||[]); break;
+    case 'flushDns': case 'registerDns': $('dnsInfo').textContent=(typeof r==='string'?r:'ok'); toast(typeof r==='string'?r:'OK'); break;
+  }
+}
+function setBusy(op,b){_ops[op]=b;document.querySelectorAll('button').forEach(function(x){if(x.dataset.op===op)x.disabled=b;});}
+
+/* ===== TABS ===== */
+var _tabLoaded={};
+function switchTab(n){
+  ['adapters','ip','adv','drv','diag','audit'].forEach(function(t){
+    $('t'+t.charAt(0).toUpperCase()+t.slice(1)).classList.toggle('active',t===n);
+    $('pane-'+t).classList.toggle('active',t===n);
+  });
+  if(n==='audit'&&!_tabLoaded.audit){_tabLoaded.audit=true;loadAudit();}
+  if(n==='drv'&&!_drivers.length)loadDrivers();
+  if(n==='adv'&&!_tabLoaded.adv){_tabLoaded.adv=true;fillAdapterSelects();}
+  if(n==='ip'&&!_tabLoaded.ip){_tabLoaded.ip=true;fillAdapterSelects();}
+  if(n==='adapters'&&!_tabLoaded.adapters){_tabLoaded.adapters=true;refreshInventory();}
+}
+
+/* ===== INVENTÁRIO ===== */
+function refreshInventory(){
+  if(_ops.inventory){dlog('skip dup inventory');return;}
+  $('adapterList').innerHTML='<div class="loading">Coletando inventário do cliente...</div>';
+  setBusy('inventory',true);
+  send('inventory');
+}
+function renderAdapters(list){
+  _adapters=list;
+  $('sAdapters').textContent=list.length;
+  $('sUp').textContent=list.filter(function(a){return a.status==='Up';}).length;
+  $('sDisabled').textContent=list.filter(function(a){return a.status==='Disabled';}).length;
+  $('invInfo').textContent=list.length+' placa(s) · '+new Date().toLocaleTimeString();
+  fillAdapterSelects();
+  if(!list.length){$('adapterList').innerHTML='<div class="empty">Nenhuma placa encontrada.</div>';return;}
+  var h='<table class="tbl"><thead><tr><th>Nome</th><th>Descrição</th><th>Status</th><th>MAC</th><th>Link</th><th>IP / Gateway</th><th>DNS</th><th style="width:330px">Ações</th></tr></thead><tbody>';
+  list.forEach(function(a){
+    var ips=(a.ipv4||[]).map(function(ip,i){return ip+(a.prefixLengths&&a.prefixLengths[i]!=null?('/'+a.prefixLengths[i]):'');}).join(', ')||'—';
+    var dnsC=(a.dnsServers||[]).length;
+    h+='<tr>'
+      +'<td><b>'+esc(a.name)+'</b>'+(a.virtual?' <span class="badge">virtual</span>':'')+'<br><span class="muted">MTU '+esc(a.mtu||'—')+' · DHCP '+esc(a.dhcp||'—')+'</span></td>'
+      +'<td class="muted">'+esc(a.description)+'<br><span class="muted">'+esc(a.driverDescription||'')+' '+esc(a.driverVersion||'')+'</span></td>'
+      +'<td>'+statusBadge(a.status)+'</td>'
+      +'<td class="muted">'+esc(a.mac||'—')+'</td>'
+      +'<td class="muted">'+esc(a.linkSpeed||'—')+(a.fullDuplex?' (full)':'')+'</td>'
+      +'<td class="muted">'+esc(ips)+(a.gateway?(' <br>GW: '+esc(a.gateway)):'')+'</td>'
+      +'<td class="muted">'+dnsC+' servidor(es)'+(a.profile?(' · '+esc(a.profile)):'')+'</td>'
+      +'<td>'
+      +'<button class="btn btn-sm" onclick="showIpDlgFor(\''+esc(a.name)+'\')">IP…</button> '
+      +'<button class="btn btn-sm" onclick="showMacDlg(\''+esc(a.name)+'\')">MAC</button> '
+      +(a.status==='Disabled'
+        ?'<button class="btn btn-sm btn-primary" data-op="enableAdapter" onclick="doEnable(\''+esc(a.name)+'\')">Ativar</button> '
+        :'<button class="btn btn-sm btn-danger" data-op="disableAdapter" onclick="doDisable(\''+esc(a.name)+'\')">Desativar</button> ')
+      +'<button class="btn btn-sm" onclick="showRename(\''+esc(a.name)+'\')">Renomear</button> '
+      +'<button class="btn btn-sm" onclick="gotoAdv(\''+esc(a.name)+'\')">Avançado</button>'
+      +'</td></tr>';
+  });
+  h+='</tbody></table>';
+  $('adapterList').innerHTML=h;
+}
+
+/* ===== IP & DNS ===== */
+function fillAdapterSelects(){
+  var opts=_adapters.map(function(a){return '<option value="'+esc(a.name)+'">'+esc(a.name)+' — '+esc(a.description||'')+'</option>';}).join('');
+  ['ipAdapter','advAdapter'].forEach(function(id){
+    var s=$(id);var cur=s.value;s.innerHTML=opts||'<option value="">— sem inventário —</option>';if(cur&&_adapters.some(function(a){return a.name===cur;}))s.value=cur;
+  });
+  if($('pane-ip').classList.contains('active'))renderIpDetail();
+  if($('pane-adv').classList.contains('active')){renderAdvCard();loadAdvProps();loadBindings();}
+}
+function curIpAdapter(){return $('ipAdapter').value;}
+function curAdvAdapter(){return $('advAdapter').value;}
+function findAdapter(n){return _adapters.find(function(a){return a.name===n;})||{};}
+function renderIpDetail(){
+  var n=curIpAdapter();var a=findAdapter(n);
+  if(!n){$('ipDetail').innerHTML='<div class="empty">—</div>';return;}
+  var ips=(a.ipv4||[]).map(function(ip,i){return ip+(a.prefixLengths&&a.prefixLengths[i]!=null?('/'+a.prefixLengths[i]):'');}).join('<br>')||'—';
+  $('ipDetail').innerHTML='<table class="tbl"><tbody>'
+    +'<tr><td style="width:160px"><b>IPs (IPv4)</b></td><td>'+ips+'</td></tr>'
+    +'<tr><td><b>Gateway</b></td><td>'+esc(a.gateway||'—')+'</td></tr>'
+    +'<tr><td><b>DNS</b></td><td>'+esc((a.dnsServers||[]).join(', ')||'—')+'</td></tr>'
+    +'<tr><td><b>DHCP</b></td><td>'+esc(a.dhcp||'—')+'</td></tr>'
+    +'<tr><td><b>Sufixo DNS</b></td><td><input type="text" id="dnsSuffix" value="'+esc(a.dnsSuffix||'')+'" style="width:280px"> <label class="muted"><input type="checkbox" id="dnsReg" checked> registrar no DNS</label> <button class="btn btn-sm" onclick="doSetSuffix()">Aplicar sufixo</button></td></tr>'
+    +'<tr><td><b>Perfil</b></td><td>'+esc(a.profile||'—')+(a.profileName?(' ('+esc(a.profileName)+')'):'')+'</td></tr>'
+    +'</tbody></table>';
+  $('ipInfo').textContent='';
+}
+function showIpDlg(){showIpDlgFor(curIpAdapter());}
+function showIpDlgFor(name){
+  var a=findAdapter(name);
+  $('ipDlgName').textContent=name;
+  $('ipAddr').value=(a.ipv4&&a.ipv4[0])||'';
+  $('ipPrefix').value=(a.prefixLengths&&a.prefixLengths[0])||24;
+  $('ipGw').value=a.gateway||'';
+  $('ipDns1').value=(a.dnsServers&&a.dnsServers[0])||'';
+  $('ipDns2').value=(a.dnsServers&&a.dnsServers[1])||'';
+  dlgBusy('ipBtn','ipStatus',false,'');
+  $('dlgIp').showModal();
+}
+function doSetIp(){
+  var name=$('ipDlgName').textContent;
+  var dns=[];if($('ipDns1').value.trim())dns.push($('ipDns1').value.trim());if($('ipDns2').value.trim())dns.push($('ipDns2').value.trim());
+  setBusy('setIp',true);
+  send('setIp',{name:name,ip:$('ipAddr').value.trim(),prefix:parseInt($('ipPrefix').value,10),gateway:$('ipGw').value.trim()||null,dns:dns});
+}
+function doDhcp(){
+  var n=curIpAdapter();if(!n)return;
+  if(!confirm('Voltar "'+n+'" para DHCP? IPs estáticos e DNS manuais serão removidos.'))return;
+  setBusy('setDhcp',true);send('setDhcp',{name:n});
+}
+function doSetSuffix(){
+  var n=curIpAdapter();if(!n)return;
+  setBusy('setDnsSuffix',true);
+  send('setDnsSuffix',{name:n,suffix:$('dnsSuffix').value.trim(),register:$('dnsReg').checked});
+}
+function doFlushDns(){setBusy('flushDns',true);send('flushDns',{});}
+function doRegisterDns(){setBusy('registerDns',true);send('registerDns',{});}
+
+/* ===== PLACAS: ativar/desativar/MAC/renomear ===== */
+function doEnable(n){setBusy('enableAdapter',true);send('enableAdapter',{name:n});}
+function doDisable(n){
+  if(!confirm('Desativar "'+n+'"? Se for a placa usada pelo agente, a conexão será perdida até ser reativada (local ou por outra placa).'))return;
+  setBusy('disableAdapter',true);send('disableAdapter',{name:n});
+}
+function showMacDlg(n){$('macDlgName').textContent=n;var a=findAdapter(n);$('macAddr').value='';$('macAddr').placeholder='atual: '+(a.mac||'—')+' → 12 hex sem separadores';dlgBusy('macBtn','macStatus',false,'');$('dlgMac').showModal();}
+function doSetMac(){
+  var n=$('macDlgName').textContent;
+  setBusy('setMac',true);send('setMac',{name:n,mac:$('macAddr').value.trim()});
+}
+function doResetMac(){
+  var n=$('macDlgName').textContent;
+  if(!confirm('Remover o MAC spoofado e restaurar o original? (restart da placa)'))return;
+  setBusy('resetMac',true);send('resetMac',{name:n});
+}
+function showRename(n){$('renOld').value=n;$('renNew').value=n;$('dlgRename').showModal();}
+function doRename(){
+  var o=$('renOld').value,n=$('renNew').value.trim();
+  if(!n||n===o){toast('Informe um novo nome',true);return;}
+  setBusy('renameAdapter',true);send('renameAdapter',{oldName:o,newName:n});
+}
+function gotoAdv(n){switchTab('adv');$('advAdapter').value=n;loadAdvProps();loadBindings();}
+
+/* ===== AVANÇADO ===== */
+function renderAdvCard(){
+  var n=curAdvAdapter();var a=findAdapter(n);
+  if(!n){$('advCard').innerHTML='<div class="empty">—</div>';return;}
+  $('advCard').innerHTML='<table class="tbl"><tbody>'
+    +'<tr><td style="width:120px"><b>MTU</b></td><td>'+esc(a.mtu||'—')+' <input type="number" id="mtuVal" value="'+esc(a.mtu||1500)+'" style="width:90px" min="576" max="16384"> <button class="btn btn-sm" data-op="setMtu" onclick="doSetMtu()">Aplicar MTU</button></td></tr>'
+    +'<tr><td><b>Perfil</b></td><td><select id="profVal">'
+    +['Public','Private','DomainAuthenticated'].map(function(p){return '<option'+(a.profile===p?' selected':'')+'>'+p+'</option>';}).join('')
+    +'</select> <button class="btn btn-sm" data-op="setProfile" onclick="doSetProfile()">Aplicar perfil</button></td></tr>'
+    +'<tr><td><b>NetBIOS</b></td><td><select id="nbVal">'
+    +'<option value="0">default (via DHCP)</option><option value="1">habilitado</option><option value="2">desabilitado</option>'
+    +'</select> <button class="btn btn-sm btn-danger" data-op="setNetbios" onclick="doSetNetbios()">Aplicar NetBIOS</button> <span class="muted">⚠️ reinicia a placa</span></td></tr>'
+    +'</tbody></table>';
+}
+function doSetMtu(){var n=curAdvAdapter();if(!n)return;setBusy('setMtu',true);send('setMtu',{name:n,mtu:parseInt($('mtuVal').value,10)});}
+function doSetProfile(){var n=curAdvAdapter();if(!n)return;setBusy('setProfile',true);send('setProfile',{name:n,profile:$('profVal').value});}
+function doSetNetbios(){var n=curAdvAdapter();if(!n)return;if(!confirm('Alterar NetBIOS reinicia a placa. Continuar?'))return;setBusy('setNetbios',true);send('setNetbios',{name:n,mode:parseInt($('nbVal').value,10)});}
+
+function loadAdvProps(){
+  var n=curAdvAdapter();if(!n)return;
+  $('advProps').innerHTML='<div class="loading">...</div>';
+  setBusy('advancedProps',true);send('advancedProps',{name:n});
+}
+function renderAdvProps(list){
+  if(!list.length){$('advProps').innerHTML='<div class="empty">Nenhuma propriedade avançada exposta pelo driver.</div>';return;}
+  var h='<table class="tbl"><thead><tr><th>Propriedade</th><th>Valor</th><th style="width:120px"></th></tr></thead><tbody>';
+  list.forEach(function(p,i){
+    h+='<tr><td><b>'+esc(p.displayName)+'</b><br><span class="muted">'+esc(p.registryKeyword)+'</span></td>'
+      +'<td>'+esc(p.displayValue)+'</td>'
+      +'<td><button class="btn btn-sm" onclick="showAdvDlg('+i+')">Alterar</button></td></tr>';
+  });
+  h+='</tbody></table>';
+  $('advProps').innerHTML=h;
+  _advPropsCache=list;
+}
+var _advPropsCache=[];
+function showAdvDlg(i){
+  var p=_advPropsCache[i];if(!p)return;
+  $('advDlgName').textContent=curAdvAdapter();
+  $('advDisp').value=p.displayName||'';
+  $('advCur').value=p.displayValue||'';
+  var valid=String(p.validValues||'').split('|').filter(function(x){return x;});
+  var v=$('advVal');
+  if(valid.length){
+    v.style.display='';$('advValTxt').style.display='none';
+    v.innerHTML=valid.map(function(x){return '<option'+(x===p.displayValue?' selected':'')+' value="'+esc(x)+'">'+esc(x)+'</option>';}).join('');
+    $('advValid').textContent='Valores aceitos: '+(p.validRegistryValues||p.validValues||'');
+  }else{
+    v.style.display='none';$('advValTxt').style.display='';
+    $('advValid').textContent='Valor livre (registryValue). Atual: '+(p.registryValue||'—');
+  }
+  $('advStatus').textContent='';$('advBtn').disabled=false;
+  $('dlgAdv').dataset.kw=p.registryKeyword||'';
+  $('dlgAdv').showModal();
+}
+function doSetAdv(){
+  var n=curAdvAdapter();
+  var val=$('advVal').style.display!=='none'?$('advVal').value:$('advValTxt').value;
+  if(!val&&val!=='0'){toast('Informe um valor',true);return;}
+  setBusy('setAdvancedProp',true);
+  send('setAdvancedProp',{name:n,registryKeyword:$('dlgAdv').dataset.kw,registryValue:val});
+}
+
+function loadBindings(){
+  var n=curAdvAdapter();if(!n)return;
+  $('bindingList').innerHTML='<div class="loading">...</div>';
+  setBusy('listBindings',true);send('listBindings',{name:n});
+}
+function renderBindings(list){
+  _bindings=list;
+  if(!list.length){$('bindingList').innerHTML='<div class="empty">Nenhum binding.</div>';return;}
+  var h='<table class="tbl"><thead><tr><th>Componente</th><th>ID</th><th>Estado</th><th></th></tr></thead><tbody>';
+  list.forEach(function(b){
+    h+='<tr><td>'+esc(b.DisplayName||b.displayName)+'</td><td class="muted">'+esc(b.ComponentID||b.componentID)+'</td>'
+      +'<td>'+(b.Enabled?'<span class="badge ok">ativo</span>':'<span class="badge off">inativo</span>')+'</td>'
+      +'<td><button class="btn btn-sm'+(b.Enabled?' btn-danger':'')+'" onclick="toggleBinding(\''+esc(b.ComponentID||b.componentID)+'\','+(b.Enabled?'false':'true')+')">('+(b.Enabled?'Desativar':'Ativar')+')</button></td></tr>';
+  });
+  h+='</tbody></table>';
+  $('bindingList').innerHTML=h;
+}
+function toggleBinding(comp,enable){
+  var n=curAdvAdapter();if(!n)return;
+  if(!enable&&!confirm('Desativar o binding "'+comp+'"? Desativar ms_tcpip (IPv4) derruba a conectividade da placa.'))return;
+  setBusy('setBindingState',true);
+  send('setBindingState',{name:n,componentID:comp,state:enable?'enable':'disable'});
+}
+
+/* ===== DRIVERS ===== */
+function loadDrivers(){
+  if(_ops.listDrivers){dlog('skip dup listDrivers');return;}
+  $('driverList').innerHTML='<div class="loading">...</div>';
+  setBusy('listDrivers',true);send('listDrivers',{});
+}
+function renderDrivers(list){
+  _drivers=list;
+  if(!list.length){$('driverList').innerHTML='<div class="empty">Nenhum driver NET encontrado.</div>';return;}
+  var h='<table class="tbl"><thead><tr><th>Dispositivo</th><th>Versão</th><th>Data</th><th>Fornecedor</th><th>INF</th><th>Assinado</th></tr></thead><tbody>';
+  list.forEach(function(d){
+    var dt=d.DriverDate||d.driverDate;
+    var dtTxt=dt?(isNaN(Number(dt))?String(dt):new Date(Number(dt)).toLocaleDateString()):'—';
+    h+='<tr><td><b>'+esc(d.DeviceName||d.deviceName)+'</b></td><td class="muted">'+esc(d.DriverVersion||d.driverVersion||'—')+'</td>'
+      +'<td class="muted">'+esc(dtTxt)+'</td><td class="muted">'+esc(d.DriverProviderName||d.driverProviderName||'—')+'</td>'
+      +'<td class="muted">'+esc(d.InfName||d.infName||'—')+'</td>'
+      +'<td>'+((d.IsSigned||d.isSigned)?'<span class="badge ok">sim</span>':'<span class="badge err">não</span>')+'</td></tr>';
+  });
+  h+='</tbody></table>';
+  $('driverList').innerHTML=h;
+}
+function doInstallDriver(){
+  var p=$('infPath').value.trim();
+  if(!p){toast('Informe o caminho do .INF no cliente',true);return;}
+  if(!confirm('Executar pnputil /add-driver "'+p+'" /install no cliente?'))return;
+  setBusy('installDriver',true);send('installDriver',{infPath:p});
+}
+
+/* ===== DIAGNÓSTICO ===== */
+function doPing(){
+  var h=$('pingHost').value.trim();if(!h){toast('Informe o host',true);return;}
+  $('pingOut').style.display='block';$('pingOut').textContent='Pingando '+h+'...';
+  setBusy('ping',true);send('ping',{host:h,count:parseInt($('pingCount').value,10)});
+}
+function loadRoutes(){
+  $('routeList').innerHTML='<div class="loading">...</div>';
+  setBusy('getRoutes',true);send('getRoutes',{});
+}
+function renderRoutes(list){
+  if(!list.length){$('routeList').innerHTML='<div class="empty">—</div>';return;}
+  var h='<table class="tbl"><thead><tr><th>Placa</th><th>Destino</th><th>NextHop</th><th>Métrica</th><th>Protocolo</th></tr></thead><tbody>';
+  list.forEach(function(r){
+    h+='<tr><td class="muted">'+esc(r.InterfaceAlias||r.interfaceAlias)+'</td><td>'+esc(r.DestinationPrefix||r.destinationPrefix)+'</td>'
+      +'<td class="muted">'+esc(r.NextHop||r.nextHop||'—')+'</td><td>'+esc(r.RouteMetric||r.routeMetric)+'</td>'
+      +'<td class="muted">'+esc(r.Protocol||r.protocol||'—')+'</td></tr>';
+  });
+  h+='</tbody></table>';$('routeList').innerHTML=h;
+}
+function loadNeighbors(){
+  $('neighborList').innerHTML='<div class="loading">...</div>';
+  setBusy('getNeighbors',true);send('getNeighbors',{});
+}
+function renderNeighbors(list){
+  if(!list.length){$('neighborList').innerHTML='<div class="empty">—</div>';return;}
+  var h='<table class="tbl"><thead><tr><th>Placa</th><th>IP</th><th>MAC</th><th>Estado</th></tr></thead><tbody>';
+  list.forEach(function(n){
+    h+='<tr><td class="muted">'+esc(n.InterfaceAlias||n.interfaceAlias)+'</td><td>'+esc(n.IPAddress||n.ipAddress)+'</td>'
+      +'<td class="muted">'+esc(n.LinkLayerAddress||n.linkLayerAddress)+'</td><td><span class="badge">'+esc(n.State||n.state)+'</span></td></tr>';
+  });
+  h+='</tbody></table>';$('neighborList').innerHTML=h;
+}
+
+/* ===== DEBUG AGENTE ===== */
+var _agentDebug=false;
+function toggleAgentDebug(){
+  _agentDebug=!_agentDebug;
+  if(ms)ms.send({action:'plugin',plugin:'netadapter',pluginaction:'setDebug',nodeid:nodeid,params:{value:String(_agentDebug)}});
+  $('dbgBtn').textContent='Debug agente: '+(_agentDebug?'ON':'OFF');
+  toast('Debug do agente '+(_agentDebug?'ligado':'desligado')+(_agentDebug?' — loga em netadapter-plugin.txt no cliente':''));
+}
+
+/* ===== AUDITORIA ===== */
+function loadAudit(){
+  $('auditList').innerHTML='<div class="loading">...</div>';
+  if(ms)ms.send({action:'plugin',plugin:'netadapter',pluginaction:'getAudit',nodeid:nodeid});
+}
+function renderAudit(docs){
+  if(!docs||!docs.length){$('auditList').innerHTML='<div class="empty">Sem registros.</div>';return;}
+  var h='<table class="tbl"><thead><tr><th>Data</th><th>Usuário</th><th>Operação</th><th>Alvo</th><th>Detalhe</th></tr></thead><tbody>';
+  docs.forEach(function(a){
+    h+='<tr><td class="muted">'+(a.time?new Date(a.time).toLocaleString():'—')+'</td>'
+      +'<td>'+esc(a.user)+'</td>'
+      +'<td><span class="badge '+(a.ok?'ok':'err')+'">'+esc(a.op)+'</span></td>'
+      +'<td>'+esc(a.target||'—')+'</td>'
+      +'<td class="muted">'+esc(a.detail||a.error||'—')+'</td></tr>';
+  });
+  h+='</tbody></table>';
+  $('auditList').innerHTML=h;
+}
+
+document.addEventListener('DOMContentLoaded',function(){
+  dlog('init');
+  _tabLoaded.adapters=true;
+  refreshInventory();
+});
+</script>
+</body>
+</html>
