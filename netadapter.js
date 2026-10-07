@@ -211,8 +211,12 @@ module.exports.netadapter = function (parent) {
                     obj.audit(p.user, p.nodeid, p.op, command.target || null, command.error || 'erro no agente', false);
                 }
                 // inventário: atualiza catálogo e invalida cache
+                // PS quirk (ConvertTo-Json): array de 1 elemento chega como OBJETO
+                // (agent sentou {adapters:[...], hostname} mas adapters com 1 placa
+                // vem desserializado como pscustomobject) — normalizar SEMPRE.
                 if ((command.op || p.op) === 'inventory' && command.ok && command.result) {
                     var adapters = command.result.adapters || command.result;
+                    if (!Array.isArray(adapters)) adapters = (adapters != null) ? [adapters] : [];
                     obj.cache[p.nodeid] = { adapters: adapters, ts: Date.now() };
                     try {
                         if (obj.db && obj.db.upsertAdapters) {

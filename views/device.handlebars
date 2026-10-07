@@ -309,7 +309,10 @@ function handleResult(d){
   }
   var r=d.result;
   switch(op){
-    case 'inventory': renderAdapters((r&&r.adapters)||[]); break;
+    case 'inventory':
+      var inv=(r&&r.adapters)||r||[];
+      if(!Array.isArray(inv))inv=(inv!=null)?[inv]:[]; // PS: 1 placa chega como objeto
+      renderAdapters(inv); break;
     case 'setIp': dlgBusy('ipBtn','ipStatus',false,''); closeDlg('dlgIp'); toast('IP aplicado: '+(r&&r.ip?r.ip+'/'+r.prefix:'ok')); refreshInventory(); break;
     case 'setDhcp': $('ipInfo').textContent='DHCP: '+(typeof r==='string'?r:(r&&r.name)); toast('DHCP reativado'+(typeof r==='string'?(': '+r):'')); renderIpDetail(); refreshInventory(); break;
     case 'setDns': $('ipInfo').textContent='DNS aplicado'; toast('DNS aplicado'); renderIpDetail(); break;
@@ -357,6 +360,7 @@ function refreshInventory(){
   send('inventory');
 }
 function renderAdapters(list){
+  if(!Array.isArray(list))list=(list!=null)?[list]:[]; // PS: array de 1 elemento vira objeto
   _adapters=list;
   $('sAdapters').textContent=list.length;
   $('sUp').textContent=list.filter(function(a){return a.status==='Up';}).length;

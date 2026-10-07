@@ -1,5 +1,9 @@
 # Changelog — NetAdapter Plugin MeshCentral
 
+## 1.0.1 (2026-10-07)
+### Fixed
+- **Catálogo explodia com 1 única placa** (`netadapter.js` + `views/device.handlebars`): quirk do `ConvertTo-Json` do PS — array de 1 elemento chega desserializado como **objeto** (não array). Com uma só placa (ex: apenas `Ethernet` na BR-25005), `result.adapters` não era array e `upsertAdapters`/`renderAdapters` falhavam com `(list || []).forEach is not a function` em todo inventário. Fix: normalização `if (!Array.isArray(x)) x = [x]` nos 3 pontos de entrada (server no handler do `agentResult`, frontend no `handleResult` e dentro do próprio `renderAdapters` — defesa em profundidade). Lição já conhecida do Spooler (§6.3) aplicada ao campo aninhado.
+
 ## 1.0.0 (2026-10-07)
 - Primeira versão. Clone estrutural do plugin Spooler (v1.1.16) — plumbing já validado em produção:
   - Server-side: `reqid` com timeouts diferenciados (120s leitura / 360s mutação / 480s mutação lenta), resposta do agente em 2 fases (`started`/`done`), catálogo NeDB atualizado a cada inventário (`upsertAdapters` + `markAbsent`), auditoria de mutações, cache em memória invalidado por mutação, `setDebug` remoto, `obj.exports` com `onDeviceRefreshEnd` (aba "Placas de Rede" só em Windows).
