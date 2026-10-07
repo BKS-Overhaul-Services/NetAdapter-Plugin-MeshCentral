@@ -759,6 +759,8 @@ function loadHosts(){
 }
 function renderHosts(list){
   if(!Array.isArray(list))list=(list!=null)?[list]:[];
+  // linhas de comentário puro (header/docs) não são entradas — só mantém gerenciadas
+  list=list.filter(function(e){return e.managed||(e.ip&&e.hostnames);});
   _hostsEntries=list;
   var managed=list.filter(function(e){return e.managed;});
   $('hostsInfo').textContent=list.length+' linha(s) · '+managed.length+' gerenciada(s) pelo plugin';

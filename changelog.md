@@ -1,5 +1,9 @@
 # Changelog — NetAdapter Plugin MeshCentral
 
+## 1.0.7 (2026-10-07)
+### Fixed
+- **Aba Hosts poluída com o header do arquivo**: linhas de comentário puro (`# Copyright...`, docs de exemplo do Windows) eram tratadas como "entradas desativadas", com IP inventado ("Copyright", "This"...). Fix duplo: agente (`getHosts`) só emite linha comentada se for entrada gerenciada nossa (`#na:<id>`); frontend filtra defensivamente (`managed` OU ip+hostnames presentes). Tabela agora mostra só entradas reais.
+
 ## 1.0.6 (2026-10-07)
 ### Fixed
 - **Dialog de IP mostrava lixo nos campos DNS** ("2" e "6"): terceiro nível do quirk do `ConvertTo-Json` — os campos-array **aninhados** de cada placa (ipv4, prefixLengths, dnsServers, ipv6, dnsServers6...) com **1 elemento** chegam como valor solto (string/número), e `dnsServers[0]` em string devolve o primeiro caractere do IP. Fix: normalização centralizada no server (9 campos por placa no handler do `agentResult`) + `asArr()` defensivo na view (`renderAdapters`, `ipListHtml`, `showIpDlgFor`).

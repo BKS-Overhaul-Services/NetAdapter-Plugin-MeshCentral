@@ -796,6 +796,8 @@ var handlers = {
             "  $t = $l.Trim(); if ($t -eq '') { continue } " +
             "  $id = $null; if ($t -match '#na:([A-Za-z0-9]+)') { $id = $Matches[1] } " +
             "  $disabled = $t.StartsWith('#'); " +
+            // comentário puro (header, docs) não é entrada — só interessa se for linha gerenciada nossa
+            "  if ($disabled -and -not $id) { continue } " +
             "  $ip = $null; $hns = @(); $cmt = $null; " +
             "  if (-not $disabled) { " +
             "    $parts = @($t -split '\\s+' | Where-Object { $_ -ne '' }); " +
