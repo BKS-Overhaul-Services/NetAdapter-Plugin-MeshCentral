@@ -75,6 +75,7 @@ pre.out{background:#1e1e1e;color:#d4d4d4;padding:10px;border-radius:3px;font-fam
   <button id="tAdv" onclick="switchTab('adv')">Avançado</button>
   <button id="tDrv" onclick="switchTab('drv')">Drivers</button>
   <button id="tDiag" onclick="switchTab('diag')">Diagnóstico</button>
+  <button id="tHosts" onclick="switchTab('hosts')">Hosts</button>
   <button id="tAudit" onclick="switchTab('audit')">Auditoria</button>
 </div>
 
@@ -84,6 +85,7 @@ pre.out{background:#1e1e1e;color:#d4d4d4;padding:10px;border-radius:3px;font-fam
     <div class="panel-title">Placas de rede</div>
     <div class="toolbar">
       <button class="btn btn-primary" onclick="refreshInventory()">Atualizar inventário</button>
+      <label class="muted" style="font-weight:700"><input type="checkbox" id="incHidden" onchange="refreshInventory()"> incluir placas ocultas (WAN Miniports etc.)</label>
       <button class="btn btn-sm" id="dbgBtn" onclick="toggleAgentDebug()">Debug agente: OFF</button>
       <span class="muted" id="invInfo"></span>
     </div>
@@ -94,11 +96,11 @@ pre.out{background:#1e1e1e;color:#d4d4d4;padding:10px;border-radius:3px;font-fam
 <!-- ===== IP & DNS ===== -->
 <div id="pane-ip" class="pane">
   <div class="panel">
-    <div class="panel-title">Configuração IP / DNS por placa</div>
+    <div class="panel-title">Configuração IP por placa (IPv4 e IPv6)</div>
     <div class="toolbar">
       <select id="ipAdapter" style="min-width:280px" onchange="renderIpDetail()"></select>
-      <button class="btn btn-primary" onclick="showIpDlg()">Configurar IP estático…</button>
-      <button class="btn" onclick="doDhcp()">Voltar para DHCP</button>
+      <button class="btn btn-primary btn-sm" onclick="showDnsDlg('IPv4')">DNS IPv4…</button>
+      <button class="btn btn-primary btn-sm" onclick="showDnsDlg('IPv6')">DNS IPv6…</button>
       <span class="muted" id="ipInfo"></span>
     </div>
     <div id="ipDetail"><div class="empty">—</div></div>
@@ -177,6 +179,20 @@ pre.out{background:#1e1e1e;color:#d4d4d4;padding:10px;border-radius:3px;font-fam
   </div>
 </div>
 
+<!-- ===== HOSTS ===== -->
+<div id="pane-hosts" class="pane">
+  <div class="panel">
+    <div class="panel-title">Arquivo hosts (C:\Windows\System32\drivers\etc\hosts)</div>
+    <div class="toolbar">
+      <button class="btn btn-primary" onclick="loadHosts()">Recarregar</button>
+      <button class="btn btn-primary" onclick="showHostsDlg()">Nova entrada</button>
+      <span class="muted" id="hostsInfo"></span>
+    </div>
+    <p class="muted" style="margin-bottom:8px">⚠️ O plugin só edita entradas que ele mesmo criou (tag <b>#na:&lt;id&gt;</b>). Entradas manuais aparecem como somente-leitura. Backup automático em <b>hosts.netadapter.bak</b> antes da primeira gravação.</p>
+    <div id="hostsList"><div class="empty">—</div></div>
+  </div>
+</div>
+
 <!-- ===== AUDITORIA ===== -->
 <div id="pane-audit" class="pane">
   <div class="panel">
@@ -190,26 +206,61 @@ pre.out{background:#1e1e1e;color:#d4d4d4;padding:10px;border-radius:3px;font-fam
 <div id="debug">aguardando...</div>
 <div class="toast" id="toast"></div>
 
-<!-- DIALOG: configurar IP estático -->
+<!-- DIALOG: configurar IP estático (IPv4 ou IPv6) -->
 <dialog id="dlgIp">
-  <div class="dlg-head"><span>IP estático — <span id="ipDlgName"></span></span><button class="btn btn-sm" onclick="closeDlg('dlgIp')">✕</button></div>
+  <div class="dlg-head"><span><span id="ipDlgFamily">IPv4</span> estático — <span id="ipDlgName"></span></span><button class="btn btn-sm" onclick="closeDlg('dlgIp')">✕</button></div>
   <div class="dlg-body">
     <div class="grid2">
-      <div class="field"><label>Endereço IP *</label><input type="text" id="ipAddr" placeholder="192.168.0.50"></div>
-      <div class="field"><label>Prefixo (máscara CIDR) *</label><input type="number" id="ipPrefix" value="24" min="1" max="32"></div>
+      <div class="field"><label>Endereço <span id="ipDlgFamily2">IPv4</span> *</label><input type="text" id="ipAddr" placeholder="192.168.0.50"></div>
+      <div class="field"><label>Prefixo (CIDR) *</label><input type="number" id="ipPrefix" value="24" min="1" max="128"></div>
     </div>
     <div class="field"><label>Gateway (opcional)</label><input type="text" id="ipGw" placeholder="192.168.0.1"></div>
     <div class="grid2">
-      <div class="field"><label>DNS primário</label><input type="text" id="ipDns1" placeholder="192.168.0.1"></div>
-      <div class="field"><label>DNS secundário</label><input type="text" id="ipDns2" placeholder="8.8.8.8"></div>
+      <div class="field"><label>DNS primário (<span id="ipDlgFamily3">IPv4</span>)</label><input type="text" id="ipDns1"></div>
+      <div class="field"><label>DNS secundário (<span id="ipDlgFamily3b">IPv4</span>)</label><input type="text" id="ipDns2"></div>
     </div>
-    <p class="muted">⚠️ Se a placa for a rota ativa do agente, a conexão pode cair durante a operação. A verificação pós-ação espera o IP ficar visível (até 15s).</p>
+    <p class="muted" id="ipDlgHint"></p>
   </div>
   <div class="dlg-foot">
     <button class="btn" onclick="closeDlg('dlgIp')">Cancelar</button>
     <button class="btn btn-primary" id="ipBtn" onclick="doSetIp()">Aplicar</button>
   </div>
   <div class="muted" id="ipStatus" style="padding:0 12px 10px"></div>
+</dialog>
+
+<!-- DIALOG: DNS por família -->
+<dialog id="dlgDns">
+  <div class="dlg-head"><span>DNS <span id="dnsDlgFamily">IPv4</span> — <span id="dnsDlgName"></span></span><button class="btn btn-sm" onclick="closeDlg('dlgDns')">✕</button></div>
+  <div class="dlg-body">
+    <div class="grid2">
+      <div class="field"><label>DNS primário *</label><input type="text" id="dnsNew1"></div>
+      <div class="field"><label>DNS secundário</label><input type="text" id="dnsNew2"></div>
+    </div>
+    <p class="muted">Aplica via Set-DnsClientServerAddress -AddressFamily, sem tocar no IP atual. Atuais: <span id="dnsCur"></span></p>
+  </div>
+  <div class="dlg-foot">
+    <button class="btn" onclick="closeDlg('dlgDns')">Cancelar</button>
+    <button class="btn btn-primary" id="dnsBtn" onclick="doSetDns()">Aplicar DNS</button>
+  </div>
+  <div class="muted" id="dnsStatus" style="padding:0 12px 10px"></div>
+</dialog>
+
+<!-- DIALOG: entrada do hosts -->
+<dialog id="dlgHosts">
+  <div class="dlg-head"><span><span id="hostsDlgTitle">Nova entrada</span> — hosts</span><button class="btn btn-sm" onclick="closeDlg('dlgHosts')">✕</button></div>
+  <div class="dlg-body">
+    <div class="grid2">
+      <div class="field"><label>IP (IPv4 ou IPv6) *</label><input type="text" id="hostsIp" placeholder="192.168.0.10"></div>
+      <div class="field"><label>Comentário (opcional)</label><input type="text" id="hostsComment" maxlength="80" placeholder="sistema legado do ERP"></div>
+    </div>
+    <div class="field"><label>Hostnames * (separados por espaço ou vírgula)</label><input type="text" id="hostsNames" placeholder="erp.interno bks-erp.corp"></div>
+    <p class="muted">Hostnames duplicados em outras entradas são rejeitados. A entrada é gravada com tag <b>#na:&lt;id&gt;</b> para edição/exclusão futura.</p>
+  </div>
+  <div class="dlg-foot">
+    <button class="btn" onclick="closeDlg('dlgHosts')">Cancelar</button>
+    <button class="btn btn-primary" id="hostsBtn" onclick="doSaveHosts()">Salvar</button>
+  </div>
+  <div class="muted" id="hostsStatus" style="padding:0 12px 10px"></div>
 </dialog>
 
 <!-- DIALOG: MAC -->
@@ -292,9 +343,10 @@ if(ms&&ms.socket){
 function send(action,params){ if(ms){ ms.send({action:'plugin',plugin:'netadapter',pluginaction:action,nodeid:nodeid,params:params||{}}); } else toast('Sem conexão',true); }
 
 function handleStarted(op){
-  if(op==='setIp')dlgBusy('ipBtn','ipStatus',true,'Na fila do agente — aplicando IP (a conexão pode oscilar)...');
+  if(op==='setIp'||op==='setIp6')dlgBusy('ipBtn','ipStatus',true,'Na fila do agente — aplicando IP (a conexão pode oscilar)...');
   if(op==='setMac')dlgBusy('macBtn','macStatus',true,'Na fila do agente — aplicando MAC + restart da placa...');
-  if(op==='setDhcp'||op==='setDns'||op==='setDnsSuffix')$('ipInfo').textContent='Executando no cliente...';
+  if(op==='addHostsEntry'||op==='updateHostsEntry'||op==='removeHostsEntry'||op==='toggleHostsEntry')$('hostsInfo').textContent='Gravando hosts no cliente...';
+  if(op==='setDhcp'||op==='setDhcp6'||op==='setDns'||op==='setDnsSuffix')$('ipInfo').textContent='Executando no cliente...';
   if(op==='installDriver')$('drvInfo').textContent='Instalando driver (pnputil — pode levar até 2min)...';
 }
 
@@ -302,8 +354,9 @@ function handleResult(d){
   var op=d.op; setBusy(op,false);
   if(!d.ok){
     toast(op+': '+(d.error||'erro'),true);
-    if(op==='setIp')dlgBusy('ipBtn','ipStatus',false,'Erro: '+(d.error||'falha'));
+    if(op==='setIp'||op==='setIp6')dlgBusy('ipBtn','ipStatus',false,'Erro: '+(d.error||'falha'));
     if(op==='setMac')dlgBusy('macBtn','macStatus',false,'Erro: '+(d.error||'falha'));
+    if(op==='setDns')dlgBusy('dnsBtn','dnsStatus',false,'Erro: '+(d.error||'falha'));
     if(op==='inventory'){$('invInfo').textContent='erro: '+d.error;}
     return;
   }
@@ -313,9 +366,9 @@ function handleResult(d){
       var inv=(r&&r.adapters)||r||[];
       if(!Array.isArray(inv))inv=(inv!=null)?[inv]:[]; // PS: 1 placa chega como objeto
       renderAdapters(inv); break;
-    case 'setIp': dlgBusy('ipBtn','ipStatus',false,''); closeDlg('dlgIp'); toast('IP aplicado: '+(r&&r.ip?r.ip+'/'+r.prefix:'ok')); refreshInventory(); break;
-    case 'setDhcp': $('ipInfo').textContent='DHCP: '+(typeof r==='string'?r:(r&&r.name)); toast('DHCP reativado'+(typeof r==='string'?(': '+r):'')); renderIpDetail(); refreshInventory(); break;
-    case 'setDns': $('ipInfo').textContent='DNS aplicado'; toast('DNS aplicado'); renderIpDetail(); break;
+    case 'setIp': case 'setIp6': dlgBusy('ipBtn','ipStatus',false,''); closeDlg('dlgIp'); toast((r&&r.family||'IP')+' aplicado: '+(r&&r.ip?r.ip+'/'+r.prefix:'ok')); renderIpDetail(); refreshInventory(); break;
+    case 'setDhcp': case 'setDhcp6': $('ipInfo').textContent='DHCP: '+(typeof r==='string'?r:(r&&r.name)); toast((r&&r.family||'DHCP')+': '+(typeof r==='string'?r:'ok')); renderIpDetail(); refreshInventory(); break;
+    case 'setDns': dlgBusy('dnsBtn','dnsStatus',false,''); closeDlg('dlgDns'); $('ipInfo').textContent='DNS aplicado'; toast('DNS: '+(typeof r==='string'?r:'ok')); renderIpDetail(); break;
     case 'setDnsSuffix': $('ipInfo').textContent='Sufixo DNS aplicado'; toast('Sufixo DNS aplicado'); break;
     case 'renameAdapter': toast('Placa renomeada'); closeDlg('dlgRename'); refreshInventory(); break;
     case 'enableAdapter': case 'disableAdapter': toast((r&&r.enabled===false?'Placa desativada':'Placa ativada')+(typeof r==='string'&&(r!=='Up'&&r!=='')?': '+r:'')); refreshInventory(); break;
@@ -334,6 +387,13 @@ function handleResult(d){
     case 'getRoutes': renderRoutes(r||[]); break;
     case 'getNeighbors': renderNeighbors(r||[]); break;
     case 'flushDns': case 'registerDns': $('dnsInfo').textContent=(typeof r==='string'?r:'ok'); toast(typeof r==='string'?r:'OK'); break;
+    case 'getHosts': renderHosts(r||[]); break;
+    case 'addHostsEntry': case 'updateHostsEntry':
+      $('hostsInfo').textContent=''; $('hostsBtn').disabled=false; $('hostsStatus').textContent='';
+      closeDlg('dlgHosts'); toast('hosts: entrada '+(op==='addHostsEntry'?'criada':'atualizada'));
+      loadHosts(); break;
+    case 'removeHostsEntry': toast('hosts: entrada removida'); loadHosts(); break;
+    case 'toggleHostsEntry': toast('hosts: entrada '+(r&&r.enabled===false?'desativada':'ativada')); loadHosts(); break;
   }
 }
 function setBusy(op,b){_ops[op]=b;document.querySelectorAll('button').forEach(function(x){if(x.dataset.op===op)x.disabled=b;});}
@@ -341,11 +401,12 @@ function setBusy(op,b){_ops[op]=b;document.querySelectorAll('button').forEach(fu
 /* ===== TABS ===== */
 var _tabLoaded={};
 function switchTab(n){
-  ['adapters','ip','adv','drv','diag','audit'].forEach(function(t){
+  ['adapters','ip','adv','drv','diag','hosts','audit'].forEach(function(t){
     $('t'+t.charAt(0).toUpperCase()+t.slice(1)).classList.toggle('active',t===n);
     $('pane-'+t).classList.toggle('active',t===n);
   });
   if(n==='audit'&&!_tabLoaded.audit){_tabLoaded.audit=true;loadAudit();}
+  if(n==='hosts'&&!_tabLoaded.hosts){_tabLoaded.hosts=true;loadHosts();}
   if(n==='drv'&&!_drivers.length)loadDrivers();
   if(n==='adv'&&!_tabLoaded.adv){_tabLoaded.adv=true;fillAdapterSelects();}
   if(n==='ip'&&!_tabLoaded.ip){_tabLoaded.ip=true;fillAdapterSelects();}
@@ -357,7 +418,7 @@ function refreshInventory(){
   if(_ops.inventory){dlog('skip dup inventory');return;}
   $('adapterList').innerHTML='<div class="loading">Coletando inventário do cliente...</div>';
   setBusy('inventory',true);
-  send('inventory');
+  send('inventory',{hidden:$('incHidden')&&$('incHidden').checked?'true':'false'});
 }
 function renderAdapters(list){
   if(!Array.isArray(list))list=(list!=null)?[list]:[]; // PS: array de 1 elemento vira objeto
@@ -381,7 +442,7 @@ function renderAdapters(list){
       +'<td class="muted">'+esc(ips)+(a.gateway?(' <br>GW: '+esc(a.gateway)):'')+'</td>'
       +'<td class="muted">'+dnsC+' servidor(es)'+(a.profile?(' · '+esc(a.profile)):'')+'</td>'
       +'<td>'
-      +'<button class="btn btn-sm" onclick="showIpDlgFor(\''+esc(a.name)+'\')">IP…</button> '
+      +'<button class="btn btn-sm" onclick="showIpDlgFor(\''+esc(a.name)+'\',\'IPv4\')">IP…</button> '
       +'<button class="btn btn-sm" onclick="showMacDlg(\''+esc(a.name)+'\')">MAC</button> '
       +(a.status==='Disabled'
         ?'<button class="btn btn-sm btn-primary" data-op="enableAdapter" onclick="doEnable(\''+esc(a.name)+'\')">Ativar</button> '
@@ -406,42 +467,101 @@ function fillAdapterSelects(){
 function curIpAdapter(){return $('ipAdapter').value;}
 function curAdvAdapter(){return $('advAdapter').value;}
 function findAdapter(n){return _adapters.find(function(a){return a.name===n;})||{};}
+function ipListHtml(addrs,prefixes,origins,isV6){
+  if(!addrs||!addrs.length)return'—';
+  return addrs.map(function(ip,i){
+    var pf=(prefixes&&prefixes[i]!=null)?('/'+prefixes[i]):'';
+    var or=(origins&&origins[i])?' <span class="badge">'+esc(origins[i])+'</span>':'';
+    var ll=isV6&&String(ip).toLowerCase().indexOf('fe80:')===0?' <span class="badge off">link-local</span>':'';
+    return esc(ip+pf)+or+ll;
+  }).join('<br>');
+}
 function renderIpDetail(){
   var n=curIpAdapter();var a=findAdapter(n);
   if(!n){$('ipDetail').innerHTML='<div class="empty">—</div>';return;}
-  var ips=(a.ipv4||[]).map(function(ip,i){return ip+(a.prefixLengths&&a.prefixLengths[i]!=null?('/'+a.prefixLengths[i]):'');}).join('<br>')||'—';
-  $('ipDetail').innerHTML='<table class="tbl"><tbody>'
-    +'<tr><td style="width:160px"><b>IPs (IPv4)</b></td><td>'+ips+'</td></tr>'
-    +'<tr><td><b>Gateway</b></td><td>'+esc(a.gateway||'—')+'</td></tr>'
-    +'<tr><td><b>DNS</b></td><td>'+esc((a.dnsServers||[]).join(', ')||'—')+'</td></tr>'
-    +'<tr><td><b>DHCP</b></td><td>'+esc(a.dhcp||'—')+'</td></tr>'
-    +'<tr><td><b>Sufixo DNS</b></td><td><input type="text" id="dnsSuffix" value="'+esc(a.dnsSuffix||'')+'" style="width:280px"> <label class="muted"><input type="checkbox" id="dnsReg" checked> registrar no DNS</label> <button class="btn btn-sm" onclick="doSetSuffix()">Aplicar sufixo</button></td></tr>'
-    +'<tr><td><b>Perfil</b></td><td>'+esc(a.profile||'—')+(a.profileName?(' ('+esc(a.profileName)+')'):'')+'</td></tr>'
-    +'</tbody></table>';
+  $('ipDetail').innerHTML='<table class="tbl"><thead><tr><th style="width:130px"></th><th>Endereços</th><th>Gateway</th><th>DNS</th><th>Modo</th><th style="width:250px">Ações</th></tr></thead><tbody>'
+    +'<tr><td><b>IPv4</b></td>'
+    +'<td>'+ipListHtml(a.ipv4,a.prefixLengths,a.ip4Origins,false)+'</td>'
+    +'<td>'+esc(a.gateway||'—')+'</td>'
+    +'<td>'+esc((a.dnsServers||[]).join(', ')||'—')+'</td>'
+    +'<td>'+(a.dhcp==='Enabled'?'<span class="badge ok">DHCP</span>':'<span class="badge warn">Estático</span>')+'</td>'
+    +'<td>'
+    +'<button class="btn btn-sm btn-primary" onclick="showIpDlgFor(\''+esc(n)+'\',\'IPv4\')">Estático…</button> '
+    +(a.dhcp==='Enabled'?'':'<button class="btn btn-sm" data-op="setDhcp" onclick="doDhcp(\'IPv4\')">DHCP</button>')
+    +'</td></tr>'
+    +'<tr><td><b>IPv6</b></td>'
+    +'<td>'+ipListHtml(a.ipv6,a.prefix6Lengths,a.ip6Origins,true)+'</td>'
+    +'<td>'+esc(a.gateway6||'—')+'</td>'
+    +'<td>'+esc((a.dnsServers6||[]).join(', ')||'—')+'</td>'
+    +'<td>'+(a.dhcp6==='Enabled'?'<span class="badge ok">Automático</span>':'<span class="badge warn">Estático</span>')+'<br><span class="muted">RD: '+esc(a.routerDiscovery||'—')+'</span></td>'
+    +'<td>'
+    +'<button class="btn btn-sm btn-primary" onclick="showIpDlgFor(\''+esc(n)+'\',\'IPv6\')">Estático…</button> '
+    +(a.dhcp6==='Enabled'?'':'<button class="btn btn-sm" data-op="setDhcp6" onclick="doDhcp(\'IPv6\')">Automático</button>')
+    +'</td></tr>'
+    +'</tbody></table>'
+    +'<p class="muted" style="margin-top:6px">IPv6 desativado de vez? Aba <b>Avançado</b> → Bindings → <b>ms_tcpip6</b>. Sufixo DNS: abaixo.</p>'
+    +'<div style="margin-top:6px"><b class="muted">Sufixo DNS:</b> <input type="text" id="dnsSuffix" value="'+esc(a.dnsSuffix||'')+'" style="width:280px"> <label class="muted"><input type="checkbox" id="dnsReg" checked> registrar no DNS</label> <button class="btn btn-sm" onclick="doSetSuffix()">Aplicar sufixo</button></div>';
   $('ipInfo').textContent='';
 }
-function showIpDlg(){showIpDlgFor(curIpAdapter());}
-function showIpDlgFor(name){
+function showIpDlgFor(name,family){
+  family=family||'IPv4';
   var a=findAdapter(name);
+  var isV6=(family==='IPv6');
+  $('dlgIp').dataset.family=family;
+  $('ipDlgFamily').textContent=family;$('ipDlgFamily2').textContent=family;
+  $('ipDlgFamily3').textContent=family;$('ipDlgFamily3b').textContent=family;
   $('ipDlgName').textContent=name;
-  $('ipAddr').value=(a.ipv4&&a.ipv4[0])||'';
-  $('ipPrefix').value=(a.prefixLengths&&a.prefixLengths[0])||24;
-  $('ipGw').value=a.gateway||'';
-  $('ipDns1').value=(a.dnsServers&&a.dnsServers[0])||'';
-  $('ipDns2').value=(a.dnsServers&&a.dnsServers[1])||'';
+  $('ipPrefix').max=isV6?128:32;
+  $('ipPrefix').value=isV6?64:((a.prefixLengths&&a.prefixLengths[0])||24);
+  $('ipAddr').value=isV6?((a.ipv6&&a.ipv6.find(function(x){return String(x).toLowerCase().indexOf('fe80:')!==0;}))||''):((a.ipv4&&a.ipv4[0])||'');
+  $('ipGw').value=(isV6?a.gateway6:a.gateway)||'';
+  var curDns=isV6?a.dnsServers6:a.dnsServers;
+  $('ipDns1').value=(curDns&&curDns[0])||'';
+  $('ipDns2').value=(curDns&&curDns[1])||'';
+  $('ipAddr').placeholder=isV6?'2001:db8::10':'192.168.0.50';
+  $('ipDlgHint').textContent=isV6
+    ?'⚠️ O link-local (fe80::) é preservado. Sem RA/DHCPv6 na rede, o gateway precisa ser informado manualmente. Se esta for a placa ativa do agente, a conexão pode oscilar.'
+    :'⚠️ Se a placa for a rota ativa do agente, a conexão pode cair durante a operação. Verificação pós-ação espera o IP ficar visível (até 15s).';
   dlgBusy('ipBtn','ipStatus',false,'');
   $('dlgIp').showModal();
 }
 function doSetIp(){
   var name=$('ipDlgName').textContent;
+  var family=$('dlgIp').dataset.family||'IPv4';
+  var isV6=(family==='IPv6');
   var dns=[];if($('ipDns1').value.trim())dns.push($('ipDns1').value.trim());if($('ipDns2').value.trim())dns.push($('ipDns2').value.trim());
-  setBusy('setIp',true);
-  send('setIp',{name:name,ip:$('ipAddr').value.trim(),prefix:parseInt($('ipPrefix').value,10),gateway:$('ipGw').value.trim()||null,dns:dns});
+  setBusy(isV6?'setIp6':'setIp',true);
+  send(isV6?'setIp6':'setIp',{name:name,ip:$('ipAddr').value.trim(),prefix:parseInt($('ipPrefix').value,10),gateway:$('ipGw').value.trim()||null,dns:dns});
 }
-function doDhcp(){
+function doDhcp(family){
   var n=curIpAdapter();if(!n)return;
-  if(!confirm('Voltar "'+n+'" para DHCP? IPs estáticos e DNS manuais serão removidos.'))return;
-  setBusy('setDhcp',true);send('setDhcp',{name:n});
+  var isV6=(family==='IPv6');
+  var msg=isV6
+    ?'Voltar "'+n+'" para endereçamento IPv6 automático (RA/DHCPv6)? Endereços v6 estáticos serão removidos e o DNS manual das DUAS famílias será resetado.'
+    :'Voltar "'+n+'" para DHCP? IPs estáticos e DNS manuais serão removidos.';
+  if(!confirm(msg))return;
+  setBusy(isV6?'setDhcp6':'setDhcp',true);
+  send(isV6?'setDhcp6':'setDhcp',{name:n});
+}
+function showDnsDlg(family){
+  var n=curIpAdapter();if(!n){toast('Atualize o inventário primeiro',true);return;}
+  var a=findAdapter(n);
+  $('dlgDns').dataset.family=family;
+  $('dnsDlgFamily').textContent=family;
+  $('dnsDlgName').textContent=n;
+  var cur=(family==='IPv6')?a.dnsServers6:a.dnsServers;
+  $('dnsCur').textContent=(cur&&cur.join(', '))||'nenhum';
+  $('dnsNew1').value=(cur&&cur[0])||'';$('dnsNew2').value=(cur&&cur[1])||'';
+  $('dnsStatus').textContent='';$('dnsBtn').disabled=false;
+  $('dlgDns').showModal();
+}
+function doSetDns(){
+  var n=$('dnsDlgName').textContent;
+  var family=$('dlgDns').dataset.family||'IPv4';
+  var dns=[];if($('dnsNew1').value.trim())dns.push($('dnsNew1').value.trim());if($('dnsNew2').value.trim())dns.push($('dnsNew2').value.trim());
+  if(!dns.length){toast('Informe ao menos um DNS',true);return;}
+  setBusy('setDns',true);
+  send('setDns',{name:n,family:family,dns:dns});
 }
 function doSetSuffix(){
   var n=curIpAdapter();if(!n)return;
@@ -622,6 +742,74 @@ function renderNeighbors(list){
       +'<td class="muted">'+esc(n.LinkLayerAddress||n.linkLayerAddress)+'</td><td><span class="badge">'+esc(n.State||n.state)+'</span></td></tr>';
   });
   h+='</tbody></table>';$('neighborList').innerHTML=h;
+}
+
+/* ===== HOSTS ===== */
+var _hostsEntries=[];
+function loadHosts(){
+  if(_ops.getHosts){dlog('skip dup getHosts');return;}
+  $('hostsList').innerHTML='<div class="loading">Lendo hosts do cliente...</div>';
+  setBusy('getHosts',true);send('getHosts',{});
+}
+function renderHosts(list){
+  if(!Array.isArray(list))list=(list!=null)?[list]:[];
+  _hostsEntries=list;
+  var managed=list.filter(function(e){return e.managed;});
+  $('hostsInfo').textContent=list.length+' linha(s) · '+managed.length+' gerenciada(s) pelo plugin';
+  if(!list.length){$('hostsList').innerHTML='<div class="empty">hosts vazio.</div>';return;}
+  var h='<table class="tbl"><thead><tr><th>IP</th><th>Hostnames</th><th>Comentário</th><th>Origem</th><th>Estado</th><th style="width:250px">Ações</th></tr></thead><tbody>';
+  list.forEach(function(e){
+    var managed=!!e.managed;
+    var src=managed?'<span class="badge ok">plugin</span>':(e.disabled?'':'<span class="badge">manual</span>');
+    var st=e.disabled?'<span class="badge off">desativada</span>':'<span class="badge ok">ativa</span>';
+    var ip=e.disabled?esc(String(e.raw||'').replace(/^#\s*/,'').trim().split(/\s+/)[0]||'—'):esc(e.ip||'—');
+    var names=e.disabled?'<span class="muted">'+esc(String(e.raw||'').trim())+'</span>':esc(e.hostnames||'—');
+    var acts='—';
+    if(managed&&e.id){
+      acts='<button class="btn btn-sm" onclick="showHostsDlg(\''+esc(e.id)+'\')">Editar</button> '
+          +(e.disabled
+            ?'<button class="btn btn-sm btn-primary" onclick="doToggleHosts(\''+esc(e.id)+'\',true)">Ativar</button> '
+            :'<button class="btn btn-sm" onclick="doToggleHosts(\''+esc(e.id)+'\',false)">Desativar</button> ')
+          +'<button class="btn btn-sm btn-danger" onclick="doRemoveHosts(\''+esc(e.id)+'\')">Excluir</button>';
+    } else if(e.disabled&&!managed){
+      src='<span class="badge off">manual (comentada)</span>';
+    }
+    h+='<tr><td><b>'+ip+'</b></td><td>'+names+'</td>'
+      +'<td class="muted">'+esc(e.comment||'—')+'</td>'
+      +'<td>'+src+'</td><td>'+st+'</td>'
+      +'<td>'+acts+'</td></tr>';
+  });
+  h+='</tbody></table>';
+  $('hostsList').innerHTML=h;
+}
+function showHostsDlg(id){
+  var e=id?_hostsEntries.find(function(x){return x.id===id;}):null;
+  if(id&&!e){toast('Entrada não encontrada — recarregue',true);return;}
+  $('dlgHosts').dataset.id=id||'';
+  $('hostsDlgTitle').textContent=id?'Editar entrada':'Nova entrada';
+  $('hostsIp').value=e?e.ip||'':'';
+  $('hostsNames').value=e?e.hostnames||'':'';
+  $('hostsComment').value=e?e.comment||'':'';
+  $('hostsStatus').textContent='';$('hostsBtn').disabled=false;
+  $('dlgHosts').showModal();
+}
+function doSaveHosts(){
+  var id=$('dlgHosts').dataset.id;
+  var params={
+    ip:$('hostsIp').value.trim(),
+    hostnames:$('hostsNames').value.trim(),
+    comment:$('hostsComment').value.trim()
+  };
+  if(!params.ip||!params.hostnames){toast('Preencha IP e hostnames',true);return;}
+  if(id){params.id=id;setBusy('updateHostsEntry',true);send('updateHostsEntry',params);}
+  else{setBusy('addHostsEntry',true);send('addHostsEntry',params);}
+}
+function doRemoveHosts(id){
+  if(!confirm('Excluir a entrada gerenciada do hosts? (o restante do arquivo não é tocado)'))return;
+  setBusy('removeHostsEntry',true);send('removeHostsEntry',{id:id});
+}
+function doToggleHosts(id,enabled){
+  setBusy('toggleHostsEntry',true);send('toggleHostsEntry',{id:id,enabled:enabled});
 }
 
 /* ===== DEBUG AGENTE ===== */

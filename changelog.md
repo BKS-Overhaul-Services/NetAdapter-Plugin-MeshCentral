@@ -1,5 +1,25 @@
 # Changelog — NetAdapter Plugin MeshCentral
 
+## 1.0.5 (2026-10-07)
+### Added
+- **Gestão do arquivo hosts** (`C:\Windows\System32\drivers\etc\hosts`): nova aba Hosts com leitura estruturada (`getHosts`: ip, hostnames, comentário, origem, estado) e 4 mutações — `addHostsEntry`, `updateHostsEntry`, `removeHostsEntry` e `toggleHostsEntry` (ativa/desativa comentando a linha). Segurança: só edita entradas com tag gerenciada `#na:<id>` (entradas manuais = somente leitura), validação estrita de IP (v4 octeto a octeto, v6 hex/::) e hostname, rejeita hostname duplicado, backup `hosts.netadapter.bak` antes da primeira gravação, gravação ASCII (encoding do hosts) e verificação pós-gravação.
+
+## 1.0.4 (2026-10-07)
+### Added
+- **Configuração IPv6 completa por placa**: novos handlers `setIp6` (endereço/prefixo 1-128/gateway/DNS v6 estáticos, preservando o link-local fe80::, com verificação pós-ação de 15s) e `setDhcp6` (remove estáticos v6, habilita DHCPv6 + RouterDiscovery Managed, aguarda RA/DHCPv6 até 20s). `setDns` agora aceita `family: IPv4|IPv6` (Set-DnsClientServerAddress -AddressFamily). Inventário expõe: IPs v6 + prefixos + origem (Dhcp/RouterAdvertisement/Manual), gateway v6 (`::/0`), DNS v6, estado DHCPv6 e RouterDiscovery.
+- **Frontend**: painel IP & DNS reescrito — tabela por família (IPv4/IPv6) com endereços + badges de origem/link-local, gateway, DNS e modo; dialogs "Estático…" e "Automático" por família; novo dialog "DNS…" por família (aplica sem tocar no IP); atalho para desativar IPv6 via binding ms_tcpip6 na aba Avançado.
+
+### Notes
+- `setDhcp6` reseta o DNS manual das **duas famílias** (limitação do `Set-DnsClientServerAddress -ResetServerAddresses`, que não tem -AddressFamily).
+- Mudança em `modules_meshcore/` — requer restart do MeshCentral + reconexão dos agentes.
+
+## 1.0.3 (2026-10-07)
+### Fixed
+- **21 placas no inventário**: `-IncludeHidden` fixo trouxe os ~18 WAN Miniports (IKEv2, L2TP, PPTP, SSTP, IP, IPv6, PPPOE...), loopback, Kernel Debug e Bluetooth PAN que todo Windows esconde — ruído puro. Agora o padrão é `Get-NetAdapter` normal (já inclui virtuais como vEthernet), e as ocultas entram só com o novo toggle "incluir placas ocultas" na aba Placas (`params.hidden='true'`).
+
+### Notes
+- Mudança em `modules_meshcore/` — requer restart do MeshCentral + reconexão dos agentes.
+
 ## 1.0.2 (2026-10-07)
 ### Fixed
 - **Inventário devolvia só 1 placa (a primeira)** (`modules_meshcore/netadapter.js`): o worker PS serializa sempre a variável `$out`, mas o wrapper `{adapters, hostname}` era montado em `$out2` — que nunca era serializado. O agente devolvia o array de placas cru, o handler fazia `result[0]` e entregava apenas a 1ª placa ao server. Fix: wrapper reatribuído a `$out` (RHS avaliado antes da reatribuição) + normalização defensiva de `adapters` no callback do handler (unwrap de 1 elemento pelo ConvertTo-Json). Versão server-side do mesmo bug era mascarada pela v1.0.1.

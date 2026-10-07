@@ -281,12 +281,47 @@ function q(s) {
     return String(s == null ? '' : s).replace(/'/g, "''").replace(/[\x00-\x08\x0B\x0C\x0E-\x1F]/g, '');
 }
 
+// ------------------- hosts helpers -------------------
+
+function _hostsNewId() {
+    return 'na' + Date.now().toString(36) + Math.random().toString(36).substring(2, 6);
+}
+
+// Valida params de entrada do hosts: { ip, hostnames[]|string, comment }
+// Retorna { ip, hns[], cmt } ou { error }
+function _hostsValidate(params) {
+    var ip = String(params.ip || '').trim();
+    var raw = params.hostnames;
+    var list = Array.isArray(raw) ? raw : String(raw || '').split(/[\s,;]+/);
+    var hns = list.map(function (h) { return String(h || '').trim().toLowerCase(); })
+        .filter(function (h) { return h; });
+    var cmt = params.comment ? q(params.comment).replace(/[\r\n]/g, ' ').trim() : null;
+    if (cmt && cmt.length > 80) cmt = cmt.substring(0, 80);
+    // IP: v4 estrito ou v6 (hex + ':')
+    var isV4 = /^(\d{1,3})\.(\d{1,3})\.(\d{1,3})\.(\d{1,3})$/.exec(ip);
+    var okIp = false;
+    if (isV4) {
+        okIp = isV4.slice(1).every(function (o) { return parseInt(o, 10) <= 255; });
+    } else if (ip.indexOf(':') >= 0) {
+        okIp = /^[0-9A-Fa-f:]+$/.test(ip) && (ip.match(/::/g) || []).length <= 1;
+    }
+    if (!okIp) return { error: 'IP invalido (use IPv4 ou IPv6 valido)' };
+    if (!hns.length) return { error: 'Informe ao menos um hostname' };
+    for (var i = 0; i < hns.length; i++) {
+        if (!/^[a-z0-9]([a-z0-9\-\.]*[a-z0-9])?$/i.test(hns[i]) || hns[i].length > 255) {
+            return { error: 'Hostname invalido: ' + hns[i] };
+        }
+    }
+    return { ip: ip, hns: hns, cmt: cmt };
+}
+
 // ------------------- fila de mutações (padrão Spooler v1.1.14) -------------------
 // Mutações NÃO podem rodar em paralelo: enable/disable/restart de placa e mudanças de
 // IP/DNS competem pela mesma pilha de rede; paralelismo gera estado inconsistente.
-var MUTATION_OPS = ['setIp', 'setDhcp', 'setDns', 'renameAdapter', 'enableAdapter',
+var MUTATION_OPS = ['setIp', 'setIp6', 'setDhcp', 'setDhcp6', 'setDns', 'renameAdapter', 'enableAdapter',
     'disableAdapter', 'setMac', 'resetMac', 'setAdvancedProp', 'setMtu', 'setProfile',
-    'setDnsSuffix', 'setNetbios', 'setBindingState', 'installDriver'];
+    'setDnsSuffix', 'setNetbios', 'setBindingState', 'installDriver',
+    'addHostsEntry', 'updateHostsEntry', 'removeHostsEntry', 'toggleHostsEntry'];
 var mutQueue = [];
 var mutRunning = false;
 
@@ -341,17 +376,25 @@ var handlers = {
     // INVENTÁRIO — placas + IP + gateway + DNS + DHCP + perfil + driver
     // ================================================================
     inventory: function (nodeid, reqid, params, res) {
+        // params.hidden = 'true' → inclui adapters ocultos (WAN Miniports, loopback,
+        // Kernel Debug, Bluetooth PAN...) — ~18 entradas de ruído no Windows padrão.
+        // Default: só adapters visíveis (já inclui virtuais como vEthernet).
+        var hiddenFlag = (String(params.hidden) === 'true') ? ' -IncludeHidden' : '';
         workerRun(
             // ⚠️ O worker serializa a variável $out — o wrapper final DEVE ser
             // atribuído a $out (RHS é avaliado antes da reatribuição). Um wrapper
             // em $out2 nunca sairia e o handler receberia só result[0] (1 placa).
             "$out = @(); " +
-            "$ads = @(Get-NetAdapter -IncludeHidden -ErrorAction SilentlyContinue); " +
+            "$ads = @(Get-NetAdapter" + hiddenFlag + " -ErrorAction SilentlyContinue); " +
             "foreach ($a in $ads) { " +
             "  $ifi = Get-NetIPInterface -InterfaceIndex $a.ifIndex -AddressFamily IPv4 -ErrorAction SilentlyContinue; " +
+            "  $ifi6 = Get-NetIPInterface -InterfaceIndex $a.ifIndex -AddressFamily IPv6 -ErrorAction SilentlyContinue; " +
             "  $ips = @(Get-NetIPAddress -InterfaceIndex $a.ifIndex -AddressFamily IPv4 -ErrorAction SilentlyContinue); " +
+            "  $ips6 = @(Get-NetIPAddress -InterfaceIndex $a.ifIndex -AddressFamily IPv6 -ErrorAction SilentlyContinue | Where-Object { $_.PrefixOrigin -ne 'WellKnown' }); " +
             "  $gw = $null; try { $gw = (Get-NetRoute -InterfaceIndex $a.ifIndex -DestinationPrefix '0.0.0.0/0' -ErrorAction Stop | Sort-Object RouteMetric | Select-Object -First 1).NextHop } catch {}; " +
+            "  $gw6 = $null; try { $gw6 = (Get-NetRoute -InterfaceIndex $a.ifIndex -DestinationPrefix '::/0' -ErrorAction Stop | Sort-Object RouteMetric | Select-Object -First 1).NextHop } catch {}; " +
             "  $dns = @(); try { $dns = @(Get-DnsClientServerAddress -InterfaceIndex $a.ifIndex -AddressFamily IPv4 -ErrorAction Stop).ServerAddresses } catch {}; " +
+            "  $dns6 = @(); try { $dns6 = @(Get-DnsClientServerAddress -InterfaceIndex $a.ifIndex -AddressFamily IPv6 -ErrorAction Stop).ServerAddresses } catch {}; " +
             "  $prof = $null; try { $prof = Get-NetConnectionProfile -InterfaceIndex $a.ifIndex -ErrorAction Stop } catch {}; " +
             "  $suffix = $null; try { $suffix = (Get-DnsClient -InterfaceIndex $a.ifIndex -ErrorAction Stop).ConnectionSpecificSuffix } catch {}; " +
             "  $out += [pscustomobject]@{ " +
@@ -363,7 +406,15 @@ var handlers = {
             "    dhcp=$(if($ifi){[string]$ifi.Dhcp}else{$null}); " +
             "    ipv4=@($ips | Select-Object -ExpandProperty IPAddress); " +
             "    prefixLengths=@($ips | Select-Object -ExpandProperty PrefixLength); " +
+            "    ip4Origins=@($ips | Select-Object -ExpandProperty PrefixOrigin); " +
             "    gateway=$gw; dnsServers=$dns; " +
+            "    ipv6=@($ips6 | Select-Object -ExpandProperty IPAddress); " +
+            "    prefix6Lengths=@($ips6 | Select-Object -ExpandProperty PrefixLength); " +
+            "    ip6Origins=@($ips6 | Select-Object -ExpandProperty PrefixOrigin); " +
+            "    ip6Sku=@($ips6 | Select-Object -ExpandProperty SuffixOrigin); " +
+            "    gateway6=$gw6; dnsServers6=$dns6; " +
+            "    dhcp6=$(if($ifi6){[string]$ifi6.Dhcp}else{$null}); " +
+            "    routerDiscovery=$(if($ifi6){[string]$ifi6.RouterDiscovery}else{$null}); " +
             "    profile=$(if($prof){$prof.NetworkCategory.ToString()}else{$null}); " +
             "    profileName=$(if($prof){$prof.Name}else{$null}); " +
             "    dnsSuffix=$suffix; " +
@@ -444,19 +495,89 @@ var handlers = {
         );
     },
 
-    // Só DNS (mantém IP atual)
+    // Só DNS (mantém IP atual). params.family: 'IPv4' (default) | 'IPv6'
     setDns: function (nodeid, reqid, params, res) {
         var name = q(params.name);
         var dns = Array.isArray(params.dns) ? params.dns : [];
+        var family = (String(params.family) === 'IPv6') ? 'IPv6' : 'IPv4';
         if (!name || !dns.length) { res({ ok: false, error: 'Parametros invalidos (name, dns[])' }); return; }
         runText(
             "$ErrorActionPreference='Stop'; " +
             "try { " +
-            "  Set-DnsClientServerAddress -InterfaceAlias '" + name + "' -ServerAddresses @(" + dns.map(function (d) { return "'" + q(d) + "'"; }).join(',') + ") -ErrorAction Stop; " +
-            "  $c = @(Get-DnsClientServerAddress -InterfaceAlias '" + name + "' -AddressFamily IPv4 -ErrorAction Stop).ServerAddresses.Count; " +
-            "  Write-Output ('OK:dns aplicado (' + $c + ')') " +
+            "  Set-DnsClientServerAddress -InterfaceAlias '" + name + "' -AddressFamily " + family + " -ServerAddresses @(" + dns.map(function (d) { return "'" + q(d) + "'"; }).join(',') + ") -ErrorAction Stop; " +
+            "  $c = @(Get-DnsClientServerAddress -InterfaceAlias '" + name + "' -AddressFamily " + family + " -ErrorAction Stop).ServerAddresses.Count; " +
+            "  Write-Output ('OK:dns ' + '" + family + "' + ' aplicado (' + $c + ')') " +
             "} catch { Write-Output ('ERR:' + $_.Exception.Message) }",
-            function (r) { if (r.ok) r.result = { name: params.name, dns: dns }; res(r); }
+            function (r) { if (r.ok) r.result = { name: params.name, family: family, dns: dns }; res(r); }
+        );
+    },
+
+    // ================================================================
+    // IPv6: endereço estático / endereçamento automático (RA+DHCPv6)
+    // ================================================================
+
+    // IPv6 estático: remove endereços v6 não link-local, cria o novo, aplica gateway/DNS v6
+    setIp6: function (nodeid, reqid, params, res) {
+        var name = q(params.name);
+        var ip = q(params.ip);
+        var prefix = parseInt(params.prefix || 64, 10);
+        var gw = params.gateway ? q(params.gateway) : null;
+        var dns = Array.isArray(params.dns) ? params.dns : [];
+        if (!name || !ip) { res({ ok: false, error: 'Parametros invalidos (name, ip)' }); return; }
+        if (ip.indexOf(':') < 0) { res({ ok: false, error: 'Endereço IPv6 invalido (use notacao ::, ex: 2001:db8::10)' }); return; }
+        if (isNaN(prefix) || prefix < 1 || prefix > 128) { res({ ok: false, error: 'Prefixo IPv6 invalido (1-128)' }); return; }
+        var dnsArr = '';
+        if (dns.length) {
+            dnsArr = " Set-DnsClientServerAddress -InterfaceAlias '" + name + "' -AddressFamily IPv6 -ServerAddresses @(" + dns.map(function (d) { return "'" + q(d) + "'"; }).join(',') + ") -ErrorAction Stop; ";
+        }
+        runText(
+            "$ErrorActionPreference='Stop'; " +
+            "try { " +
+            PS_FIND_ADAPTER.replace(/\{NAME\}/g, name) +
+            // preserva o link-local (fe80::/10) — Remove-NetIPAddress v6 só nos estáticos/globais
+            "  Get-NetIPAddress -InterfaceAlias '" + name + "' -AddressFamily IPv6 -ErrorAction SilentlyContinue | " +
+            "    Where-Object { $_.IPAddress -notlike 'fe80:*' -and $_.PrefixOrigin -ne 'WellKnown' } | " +
+            "    Remove-NetIPAddress -Confirm:$false -ErrorAction SilentlyContinue; " +
+            "  Remove-NetRoute -InterfaceAlias '" + name + "' -DestinationPrefix '::/0' -Confirm:$false -ErrorAction SilentlyContinue; " +
+            "  New-NetIPAddress -InterfaceAlias '" + name + "' -IPAddress '" + ip + "' -PrefixLength " + prefix + (gw ? (" -DefaultGateway '" + gw + "'") : "") + " -ErrorAction Stop | Out-Null; " +
+            dnsArr +
+            "  $ok2 = $false; " +
+            "  for ($i2 = 0; $i2 -lt 15; $i2++) { " +
+            "    if (Get-NetIPAddress -InterfaceAlias '" + name + "' -IPAddress '" + ip + "' -AddressFamily IPv6 -ErrorAction SilentlyContinue) { $ok2 = $true; break } " +
+            "    Start-Sleep -Seconds 1 " +
+            "  } " +
+            "  if (-not $ok2) { Write-Output 'ERR:IPv6 nao ficou visivel apos New-NetIPAddress'; exit } " +
+            "  Write-Output ('OK:' + '" + ip + "/" + prefix + "') " +
+            "} catch { Write-Output ('ERR:' + $_.Exception.Message) }",
+            function (r) { if (r.ok) r.result = { name: params.name, ip: params.ip, prefix: prefix, gateway: gw, family: 'IPv6' }; res(r); }
+        );
+    },
+
+    // IPv6 automático: remove estáticos v6, habilita DHCPv6/Router Discovery.
+    // NOTA: Set-DnsClientServerAddress -ResetServerAddresses reseta DNS das DUAS famílias.
+    setDhcp6: function (nodeid, reqid, params, res) {
+        var name = q(params.name);
+        if (!name) { res({ ok: false, error: 'name obrigatorio' }); return; }
+        runText(
+            "$ErrorActionPreference='Stop'; " +
+            "try { " +
+            PS_FIND_ADAPTER.replace(/\{NAME\}/g, name) +
+            "  Get-NetIPAddress -InterfaceAlias '" + name + "' -AddressFamily IPv6 -ErrorAction SilentlyContinue | " +
+            "    Where-Object { $_.IPAddress -notlike 'fe80:*' -and $_.PrefixOrigin -ne 'WellKnown' } | " +
+            "    Remove-NetIPAddress -Confirm:$false -ErrorAction SilentlyContinue; " +
+            "  Remove-NetRoute -InterfaceAlias '" + name + "' -DestinationPrefix '::/0' -Confirm:$false -ErrorAction SilentlyContinue; " +
+            "  Set-NetIPInterface -InterfaceAlias '" + name + "' -AddressFamily IPv6 -Dhcp Enabled -RouterDiscovery Managed -ErrorAction Stop; " +
+            "  Set-DnsClientServerAddress -InterfaceAlias '" + name + "' -ResetServerAddresses -ErrorAction Stop; " +
+            "  $ok2 = $false; " +
+            "  for ($i2 = 0; $i2 -lt 20; $i2++) { " +
+            "    $ip6 = Get-NetIPAddress -InterfaceAlias '" + name + "' -AddressFamily IPv6 -ErrorAction SilentlyContinue | Where-Object { $_.PrefixOrigin -in @('Dhcp','RouterAdvertisement') }; " +
+            "    if ($ip6) { $ok2 = $true; break } " +
+            "    Start-Sleep -Seconds 1 " +
+            "  } " +
+            "  if (-not $ok2) { Write-Output 'OK:automático habilitado (sem endereço global ainda — depende de RA/DHCPv6 na rede)'; exit } " +
+            "  Write-Output ('OK:' + ($ip6 | Select-Object -First 1).IPAddress) " +
+            "} catch { Write-Output ('ERR:' + $_.Exception.Message) }",
+            function (r) { if (r.ok) r.result = { name: params.name, dhcp: true, family: 'IPv6' }; res(r); }
         );
     },
 
@@ -659,6 +780,134 @@ var handlers = {
     },
 
     // ================================================================
+    // Arquivo HOSTS — só edita entradas gerenciadas (tag #na:<id>).
+    // Entradas manuais do usuário: somente leitura. Backup .bak na 1ª escrita.
+    // ================================================================
+
+    // Leitura estruturada do hosts
+    getHosts: function (nodeid, reqid, params, res) {
+        workerRun(
+            "$out = @(); " +
+            "$f = $env:SystemRoot + '\\System32\\drivers\\etc\\hosts'; " +
+            "$lines = @(); try { $lines = [System.IO.File]::ReadAllLines($f) } catch {}; " +
+            "$i = 0; " +
+            "foreach ($l in $lines) { " +
+            "  $i++; " +
+            "  $t = $l.Trim(); if ($t -eq '') { continue } " +
+            "  $id = $null; if ($t -match '#na:([A-Za-z0-9]+)') { $id = $Matches[1] } " +
+            "  $disabled = $t.StartsWith('#'); " +
+            "  $ip = $null; $hns = @(); $cmt = $null; " +
+            "  if (-not $disabled) { " +
+            "    $parts = @($t -split '\\s+' | Where-Object { $_ -ne '' }); " +
+            "    if ($parts.Count -ge 2) { " +
+            "      $ip = $parts[0]; " +
+            "      $hns = @($parts[1..($parts.Count-1)] | Where-Object { $_ -notmatch '^#' }); " +
+            "      $cm = @($parts[1..($parts.Count-1)] | Where-Object { $_ -match '^#' -and $_ -notmatch '#na:' }); " +
+            "      if ($cm.Count) { $cmt = ($cm -join ' ').TrimStart('#').Trim() } " +
+            "    } " +
+            "  } " +
+            "  if ($ip -or $id -or $disabled) { " +
+            "    $out += [pscustomobject]@{ line=$i; raw=$l; ip=$ip; hostnames=($hns -join ' '); comment=$cmt; managed=[bool]$id; id=$id; disabled=$disabled } " +
+            "  } " +
+            "} ",
+            res
+        );
+    },
+
+    // Adiciona entrada gerenciada: ip + hostnames[] + comment opcional
+    addHostsEntry: function (nodeid, reqid, params, res) {
+        var entry = _hostsValidate(params);
+        if (entry.error) { res({ ok: false, error: entry.error }); return; }
+        var id = _hostsNewId();
+        var line = entry.ip + '\t' + entry.hns.join(' ') + (entry.cmt ? ('\t# ' + entry.cmt) : '') + ' #na:' + id;
+        runText(
+            "$ErrorActionPreference='Stop'; " +
+            "try { " +
+            "  $f = $env:SystemRoot + '\\System32\\drivers\\etc\\hosts'; " +
+            "  $bak = $f + '.netadapter.bak'; " +
+            "  if (-not (Test-Path $bak)) { Copy-Item $f $bak -ErrorAction Stop } " +
+            "  $dup = Get-Content $f -ErrorAction SilentlyContinue | Where-Object { $_ -notmatch '^\\s*#' -and $_ -match '" + entry.hns.map(function (h) { return h.replace(/[.*+?^${}()|[\]\\]/g, '\\$&'); }).join('|') + "' } ; " +
+            "  if ($dup) { Write-Output ('ERR:hostname ja existe no hosts (linha: ' + $dup[0].Trim() + ')'); exit } " +
+            "  Add-Content -Path $f -Value \"" + line + "\" -Encoding ASCII -ErrorAction Stop; " +
+            "  if (-not (Select-String -Path $f -Pattern '#na:" + id + "' -Quiet)) { Write-Output 'ERR:entrada nao ficou visivel apos gravar'; exit } " +
+            "  Write-Output ('OK:' + '" + entry.ip + "') " +
+            "} catch { Write-Output ('ERR:' + $_.Exception.Message) }",
+            function (r) { if (r.ok) r.result = { id: id, ip: entry.ip, hostnames: entry.hns }; res(r); }
+        );
+    },
+
+    // Atualiza entrada gerenciada (reescrita sem a linha antiga + append da nova)
+    updateHostsEntry: function (nodeid, reqid, params, res) {
+        var id = q(params.id);
+        if (!/^[A-Za-z0-9]+$/.test(id)) { res({ ok: false, error: 'id invalido' }); return; }
+        var entry = _hostsValidate(params);
+        if (entry.error) { res({ ok: false, error: entry.error }); return; }
+        var line = entry.ip + '\t' + entry.hns.join(' ') + (entry.cmt ? ('\t# ' + entry.cmt) : '') + ' #na:' + id;
+        runText(
+            "$ErrorActionPreference='Stop'; " +
+            "try { " +
+            "  $f = $env:SystemRoot + '\\System32\\drivers\\etc\\hosts'; " +
+            "  $bak = $f + '.netadapter.bak'; " +
+            "  if (-not (Test-Path $bak)) { Copy-Item $f $bak -ErrorAction Stop } " +
+            "  if (-not (Select-String -Path $f -Pattern '#na:" + id + "' -Quiet)) { Write-Output 'ERR:entrada gerenciada nao encontrada'; exit } " +
+            "  $keep = Get-Content $f -ErrorAction Stop | Where-Object { $_ -notmatch ('#na:' + '" + id + "') }; " +
+            "  Set-Content -Path $f -Value $keep -Encoding ASCII -ErrorAction Stop; " +
+            "  Add-Content -Path $f -Value \"" + line + "\" -Encoding ASCII -ErrorAction Stop; " +
+            "  Write-Output ('OK:' + '" + entry.ip + "') " +
+            "} catch { Write-Output ('ERR:' + $_.Exception.Message) }",
+            function (r) { if (r.ok) r.result = { id: id, ip: entry.ip, hostnames: entry.hns }; res(r); }
+        );
+    },
+
+    // Remove entrada gerenciada
+    removeHostsEntry: function (nodeid, reqid, params, res) {
+        var id = q(params.id);
+        if (!/^[A-Za-z0-9]+$/.test(id)) { res({ ok: false, error: 'id invalido' }); return; }
+        runText(
+            "$ErrorActionPreference='Stop'; " +
+            "try { " +
+            "  $f = $env:SystemRoot + '\\System32\\drivers\\etc\\hosts'; " +
+            "  if (-not (Select-String -Path $f -Pattern '#na:" + id + "' -Quiet)) { Write-Output 'ERR:entrada gerenciada nao encontrada'; exit } " +
+            "  $keep = Get-Content $f -ErrorAction Stop | Where-Object { $_ -notmatch ('#na:' + '" + id + "') }; " +
+            "  Set-Content -Path $f -Value $keep -Encoding ASCII -ErrorAction Stop; " +
+            "  Write-Output 'OK' " +
+            "} catch { Write-Output ('ERR:' + $_.Exception.Message) }",
+            function (r) { if (r.ok) r.result = { id: id }; res(r); }
+        );
+    },
+
+    // Ativa/desativa entrada gerenciada (comenta/descomenta a linha)
+    toggleHostsEntry: function (nodeid, reqid, params, res) {
+        var id = q(params.id);
+        var enable = (params.enabled === true);
+        if (!/^[A-Za-z0-9]+$/.test(id)) { res({ ok: false, error: 'id invalido' }); return; }
+        runText(
+            "$ErrorActionPreference='Stop'; " +
+            "try { " +
+            "  $f = $env:SystemRoot + '\\System32\\drivers\\etc\\hosts'; " +
+            "  $lines = Get-Content $f -ErrorAction Stop; " +
+            "  $found = $false; $new = @(); " +
+            "  foreach ($l in $lines) { " +
+            "    if ($l -match ('#na:' + '" + id + "')) { " +
+            "      $found = $true; " +
+            "      $t = $l.TrimStart(); " +
+            "      if (" + (enable ? '$true' : '$false') + ") { " +
+            "        if ($t.StartsWith('#')) { $l = $t.Substring(1).TrimStart() } " +
+            "      } else { " +
+            "        if (-not $t.StartsWith('#')) { $l = '# ' + $l } " +
+            "      } " +
+            "    } " +
+            "    $new += $l " +
+            "  } " +
+            "  if (-not $found) { Write-Output 'ERR:entrada gerenciada nao encontrada'; exit } " +
+            "  Set-Content -Path $f -Value $new -Encoding ASCII -ErrorAction Stop; " +
+            "  Write-Output 'OK' " +
+            "} catch { Write-Output ('ERR:' + $_.Exception.Message) }",
+            function (r) { if (r.ok) r.result = { id: id, enabled: enable }; res(r); }
+        );
+    },
+
+    // ================================================================
     // Drivers
     // ================================================================
 
@@ -793,12 +1042,13 @@ MUTATION_OPS.forEach(function (op) { MUTATION_HANDLERS[op] = handlers[op]; });
 
 // ------------------------- dispatcher -------------------------
 
-var ALLOWED = ['inventory', 'setIp', 'setDhcp', 'setDns', 'setDnsSuffix',
+var ALLOWED = ['inventory', 'setIp', 'setIp6', 'setDhcp', 'setDhcp6', 'setDns', 'setDnsSuffix',
     'renameAdapter', 'enableAdapter', 'disableAdapter', 'setMac', 'resetMac',
     'setMtu', 'setProfile', 'setNetbios',
     'setAdvancedProp', 'listBindings', 'setBindingState',
     'listDrivers', 'installDriver',
-    'ping', 'getRoutes', 'getNeighbors', 'flushDns', 'registerDns', 'setDebug'];
+    'ping', 'getRoutes', 'getNeighbors', 'flushDns', 'registerDns', 'setDebug',
+    'getHosts', 'addHostsEntry', 'updateHostsEntry', 'removeHostsEntry', 'toggleHostsEntry'];
 
 function consoleaction(args, rights, sessionid, parent) {
     mesh = parent;

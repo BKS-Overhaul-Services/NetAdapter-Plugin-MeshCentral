@@ -15,12 +15,13 @@
 
 // Ops de mutação (mesma lista do agente) — timeout estendido (algumas derrubam a conexão
 // ou mexem na pilha de rede; a verificação pós-ação pode levar até 30s)
-var MUTATION_SERVER_OPS = ['setIp', 'setDhcp', 'setDns', 'renameAdapter', 'enableAdapter',
+var MUTATION_SERVER_OPS = ['setIp', 'setIp6', 'setDhcp', 'setDhcp6', 'setDns', 'renameAdapter', 'enableAdapter',
     'disableAdapter', 'setMac', 'resetMac', 'setAdvancedProp', 'setMtu', 'setProfile',
-    'setDnsSuffix', 'setNetbios', 'setBindingState', 'installDriver'];
+    'setDnsSuffix', 'setNetbios', 'setBindingState', 'installDriver',
+    'addHostsEntry', 'updateHostsEntry', 'removeHostsEntry', 'toggleHostsEntry'];
 
 // Ops que tocam na conectividade do próprio agente — timeout maior ainda
-var SLOW_OPS = ['setIp', 'setDhcp', 'enableAdapter', 'disableAdapter', 'setMac', 'resetMac',
+var SLOW_OPS = ['setIp', 'setIp6', 'setDhcp', 'setDhcp6', 'enableAdapter', 'disableAdapter', 'setMac', 'resetMac',
     'setNetbios', 'installDriver'];
 
 // Configurável: gate de logs de diagnóstico (error sempre ativo)
@@ -248,9 +249,11 @@ module.exports.netadapter = function (parent) {
                     obj.agentRequest(command, sid, user);
                     break;
 
-                // ---- IP / DNS / DHCP ----
+                // ---- IP / DNS / DHCP (IPv4 e IPv6) ----
                 case 'setIp':
+                case 'setIp6':
                 case 'setDhcp':
+                case 'setDhcp6':
                 case 'setDns':
                 case 'setDnsSuffix':
                     obj.agentRequest(command, sid, user);
@@ -288,6 +291,15 @@ module.exports.netadapter = function (parent) {
                 case 'getNeighbors':
                 case 'flushDns':
                 case 'registerDns':
+                case 'getHosts':
+                    obj.agentRequest(command, sid, user);
+                    break;
+
+                // ---- arquivo hosts (mutações gerenciadas) ----
+                case 'addHostsEntry':
+                case 'updateHostsEntry':
+                case 'removeHostsEntry':
+                case 'toggleHostsEntry':
                     obj.agentRequest(command, sid, user);
                     break;
 
