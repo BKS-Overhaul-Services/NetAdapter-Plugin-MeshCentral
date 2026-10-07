@@ -422,6 +422,8 @@ function refreshInventory(){
 }
 function renderAdapters(list){
   if(!Array.isArray(list))list=(list!=null)?[list]:[]; // PS: array de 1 elemento vira objeto
+  var AF=['ipv4','prefixLengths','ip4Origins','dnsServers','ipv6','prefix6Lengths','ip6Origins','ip6Sku','dnsServers6'];
+  list.forEach(function(a){AF.forEach(function(f){if(a[f]!=null&&!Array.isArray(a[f]))a[f]=[a[f]];});});
   _adapters=list;
   $('sAdapters').textContent=list.length;
   $('sUp').textContent=list.filter(function(a){return a.status==='Up';}).length;
@@ -467,8 +469,10 @@ function fillAdapterSelects(){
 function curIpAdapter(){return $('ipAdapter').value;}
 function curAdvAdapter(){return $('advAdapter').value;}
 function findAdapter(n){return _adapters.find(function(a){return a.name===n;})||{};}
+function asArr(x){return Array.isArray(x)?x:(x==null?[]:[x]);} // PS: array de 1 elemento vira valor solto
 function ipListHtml(addrs,prefixes,origins,isV6){
-  if(!addrs||!addrs.length)return'—';
+  addrs=asArr(addrs);prefixes=asArr(prefixes);origins=asArr(origins);
+  if(!addrs.length)return'—';
   return addrs.map(function(ip,i){
     var pf=(prefixes&&prefixes[i]!=null)?('/'+prefixes[i]):'';
     var or=(origins&&origins[i])?' <span class="badge">'+esc(origins[i])+'</span>':'';
@@ -507,6 +511,8 @@ function showIpDlgFor(name,family){
   family=family||'IPv4';
   var a=findAdapter(name);
   var isV6=(family==='IPv6');
+  a.ipv4=asArr(a.ipv4);a.prefixLengths=asArr(a.prefixLengths);a.dnsServers=asArr(a.dnsServers);
+  a.ipv6=asArr(a.ipv6);a.prefix6Lengths=asArr(a.prefix6Lengths);a.dnsServers6=asArr(a.dnsServers6);
   $('dlgIp').dataset.family=family;
   $('ipDlgFamily').textContent=family;$('ipDlgFamily2').textContent=family;
   $('ipDlgFamily3').textContent=family;$('ipDlgFamily3b').textContent=family;

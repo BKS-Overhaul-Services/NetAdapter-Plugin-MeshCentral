@@ -1,5 +1,12 @@
 # Changelog — NetAdapter Plugin MeshCentral
 
+## 1.0.6 (2026-10-07)
+### Fixed
+- **Dialog de IP mostrava lixo nos campos DNS** ("2" e "6"): terceiro nível do quirk do `ConvertTo-Json` — os campos-array **aninhados** de cada placa (ipv4, prefixLengths, dnsServers, ipv6, dnsServers6...) com **1 elemento** chegam como valor solto (string/número), e `dnsServers[0]` em string devolve o primeiro caractere do IP. Fix: normalização centralizada no server (9 campos por placa no handler do `agentResult`) + `asArr()` defensivo na view (`renderAdapters`, `ipListHtml`, `showIpDlgFor`).
+
+### Notes
+- Server + view apenas — **reload** do plugin (sem restart, sem reconexão de agentes). Lição consolidada: no PS 5.1, `ConvertTo-Json` desembrulha arrays de 1 elemento em TODOS os níveis; normalizar sempre na fronteira de entrada.
+
 ## 1.0.5 (2026-10-07)
 ### Added
 - **Gestão do arquivo hosts** (`C:\Windows\System32\drivers\etc\hosts`): nova aba Hosts com leitura estruturada (`getHosts`: ip, hostnames, comentário, origem, estado) e 4 mutações — `addHostsEntry`, `updateHostsEntry`, `removeHostsEntry` e `toggleHostsEntry` (ativa/desativa comentando a linha). Segurança: só edita entradas com tag gerenciada `#na:<id>` (entradas manuais = somente leitura), validação estrita de IP (v4 octeto a octeto, v6 hex/::) e hostname, rejeita hostname duplicado, backup `hosts.netadapter.bak` antes da primeira gravação, gravação ASCII (encoding do hosts) e verificação pós-gravação.

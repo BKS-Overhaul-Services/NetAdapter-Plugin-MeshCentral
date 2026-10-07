@@ -218,6 +218,16 @@ module.exports.netadapter = function (parent) {
                 if ((command.op || p.op) === 'inventory' && command.ok && command.result) {
                     var adapters = command.result.adapters || command.result;
                     if (!Array.isArray(adapters)) adapters = (adapters != null) ? [adapters] : [];
+                    // PS quirk nível 2: TODOS os campos-array aninhados com 1 elemento
+                    // chegam como valor solto (string/número) — ex.: dnsServers com 1
+                    // DNS vira string e o frontend lia dnsServers[0] = 1º caractere.
+                    var ARR_FIELDS = ['ipv4', 'prefixLengths', 'ip4Origins', 'dnsServers',
+                        'ipv6', 'prefix6Lengths', 'ip6Origins', 'ip6Sku', 'dnsServers6'];
+                    adapters.forEach(function (ad) {
+                        ARR_FIELDS.forEach(function (f) {
+                            if (ad[f] != null && !Array.isArray(ad[f])) ad[f] = [ad[f]];
+                        });
+                    });
                     obj.cache[p.nodeid] = { adapters: adapters, ts: Date.now() };
                     try {
                         if (obj.db && obj.db.upsertAdapters) {
