@@ -25,7 +25,7 @@ var SLOW_OPS = ['setIp', 'setIp6', 'setDhcp', 'setDhcp6', 'enableAdapter', 'disa
     'setNetbios', 'installDriver'];
 
 // Configurável: gate de logs de diagnóstico (error sempre ativo)
-var NA_DEBUG = true;
+var NA_DEBUG = false;
 
 // Categorias de log (padrão Tracer/Spooler)
 var NA_LOG = {
