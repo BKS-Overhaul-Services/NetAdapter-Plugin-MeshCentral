@@ -981,6 +981,122 @@ var handlers = {
 
 var readHandlers = {
 
+    // ===== WI-FI / IP público (v2.1) =====
+    // Parsing do netsh tolerante a locale PT-BR/EN (regex com wildcards p/ acentos).
+
+    // Redes Wi-Fi detectáveis (scan passivo do wlanSvc, sem enviar probes novos)
+    getWifiNetworks: function (nodeid, reqid, params, res) {
+        workerRun(
+            "$out = @(); " +
+            "try { " +
+            "  $raw = netsh wlan show networks mode=bssid | Out-String; " +
+            "  if ($raw -notmatch 'no wireless interface|sem interface') { " +
+            "    $cur = $null; " +
+            "    foreach ($ln in ($raw -split \"`r?`n\")) { " +
+            "      if ($ln -match '^\\s*SSID \\d+\\s*: (.*)$') { if ($cur) { $out += $cur }; $cur = [pscustomobject]@{ ssid=$Matches[1].Trim(); bssid=''; signal=0; channel=0; band=''; auth=''; cipher=''; radio='' } } " +
+            "      elseif ($null -ne $cur) { " +
+            "        if ($ln -match '^\\s*(?:BSSID|Endere.o F.sico) \\d+\\s*: (.*)$') { $cur.bssid = $Matches[1].Trim() } " +
+            "        elseif ($ln -match '^\\s*(?:Signal|Sinal)\\s*: (\\d+)%') { $cur.signal = [int]$Matches[1] } " +
+            "        elseif ($ln -match '^\\s*(?:Channel|Canal)\\s*: (\\d+)') { $cur.channel = [int]$Matches[1] } " +
+            "        elseif ($ln -match '^\\s*(?:Authentication|Autentica..o)\\s*: (.*)$') { $cur.auth = $Matches[1].Trim() } " +
+            "        elseif ($ln -match '^\\s*(?:Encryption|Criptografia)\\s*: (.*)$') { $cur.cipher = $Matches[1].Trim() } " +
+            "        elseif ($ln -match '^\\s*(?:Radio type|Tipo de r.dio)\\s*: (.*)$') { $cur.radio = $Matches[1].Trim() } " +
+            "      } " +
+            "    } " +
+            "    if ($cur) { $out += $cur } " +
+            "    foreach ($n in $out) { if ($n.channel -ge 1 -and $n.channel -le 14) { $n.band = '2.4GHz' } elseif ($n.channel -ge 32 -and $n.channel -le 177) { $n.band = '5GHz' } elseif ($n.channel -gt 0) { $n.band = '6GHz' } } " +
+            "  } " +
+            "} catch {} ",
+            function (r) {
+                if (r.ok && (!r.result || !r.result.length)) r.result = [];
+                res(r);
+            }
+        );
+    },
+
+    // Perfis Wi-Fi salvos (redes salvas) + senha em claro (agente roda como SYSTEM = admin)
+    // ⚠️ SENSÍVEL: servidor audita o acesso (não a senha).
+    getWifiProfiles: function (nodeid, reqid, params, res) {
+        workerRun(
+            "$out = @(); " +
+            "try { " +
+            "  $raw = netsh wlan show profiles | Out-String; " +
+            "  $names = @(); " +
+            "  foreach ($ln in ($raw -split \"`r?`n\")) { if ($ln -match '^\\s*(?:All User Profile|Todos os perfis de usu.rio)\\s*: (.*)$') { $names += $Matches[1].Trim() } } " +
+            "  foreach ($n in $names) { " +
+            "    $p = netsh wlan show profile name=\"$n\" key=clear | Out-String; " +
+            "    $auth = ''; $cipher = ''; $key = ''; " +
+            "    foreach ($ln in ($p -split \"`r?`n\")) { " +
+            "      if ($ln -match '^\\s*(?:Authentication|Autentica..o)\\s*: (.*)$') { $auth = $Matches[1].Trim() } " +
+            "      elseif ($ln -match '^\\s*(?:Cipher|Criptografia)\\s*: (.*)$') { $cipher = $Matches[1].Trim() } " +
+            "      elseif ($ln -match '^\\s*(?:Key Content|Conte.do da Chave)\\s*: (.*)$') { $key = $Matches[1].Trim() } " +
+            "    } " +
+            "    $out += [pscustomobject]@{ name=$n; auth=$auth; cipher=$cipher; hasPassword=($key -ne ''); password=$key } " +
+            "  } " +
+            "} catch {} ",
+            function (r) {
+                if (r.ok && (!r.result || !r.result.length)) r.result = [];
+                res(r);
+            }
+        );
+    },
+
+    // Estado da conexão Wi-Fi atual (ou indicação de que não há wlan)
+    getWifiStatus: function (nodeid, reqid, params, res) {
+        workerRun(
+            "$out = $null; " +
+            "try { " +
+            "  $raw = netsh wlan show interfaces | Out-String; " +
+            "  if ($raw -match 'no wireless interface|sem interface') { $out = [pscustomobject]@{ wifi = $false } } " +
+            "  else { " +
+            "    $st = ''; $ssid = ''; $bssid = ''; $radio = ''; $auth = ''; $cipher = ''; $sig = 0; $ch = 0; $rx = ''; $tx = ''; " +
+            "    foreach ($ln in ($raw -split \"`r?`n\")) { " +
+            "      if ($ln -match '^\\s*(?:State|Estado)\\s*: (.*)$') { $st = $Matches[1].Trim() } " +
+            "      elseif ($ln -match '^\\s*SSID\\s*: (.*)$') { $ssid = $Matches[1].Trim() } " +
+            "      elseif ($ln -match '^\\s*(?:BSSID|Endere.o F.sico)\\s*: (.*)$') { $bssid = $Matches[1].Trim() } " +
+            "      elseif ($ln -match '^\\s*(?:Radio type|Tipo de r.dio)\\s*: (.*)$') { $radio = $Matches[1].Trim() } " +
+            "      elseif ($ln -match '^\\s*(?:Authentication|Autentica..o)\\s*: (.*)$') { $auth = $Matches[1].Trim() } " +
+            "      elseif ($ln -match '^\\s*(?:Cipher|Criptografia)\\s*: (.*)$') { $cipher = $Matches[1].Trim() } " +
+            "      elseif ($ln -match '^\\s*(?:Signal|Sinal)\\s*: (\\d+)%') { $sig = [int]$Matches[1] } " +
+            "      elseif ($ln -match '^\\s*(?:Channel|Canal)\\s*: (\\d+)') { $ch = [int]$Matches[1] } " +
+            "      elseif ($ln -match '^\\s*(?:Receive rate|Taxa de receb)\\(.*$') { $rx = ($ln -split ':')[1].Trim() } " +
+            "      elseif ($ln -match '^\\s*(?:Transmit rate|Taxa de transm)\\(.*$') { $tx = ($ln -split ':')[1].Trim() } " +
+            "    } " +
+            "    $out = [pscustomobject]@{ wifi = $true; state = $st; ssid = $ssid; bssid = $bssid; radio = $radio; auth = $auth; cipher = $cipher; signal = $sig; channel = $ch; rxRate = $rx; txRate = $tx } " +
+            "  } " +
+            "  $prof = @(Get-NetConnectionProfile -ErrorAction SilentlyContinue | Select-Object Name, InterfaceAlias, NetworkCategory); " +
+            "  if ($out) { $out | Add-Member -NotePropertyName connections -NotePropertyValue $prof -Force } " +
+            "} catch {} ",
+            function (r) {
+                if (r.ok && (!r.result || !r.result.length || !r.result[0])) { res({ ok: false, error: 'sem dados de interface' }); return; }
+                if (r.ok) r.result = r.result[0];
+                res(r);
+            }
+        );
+    },
+
+    // IP local + público + DNS + perfis de conexão (base p/ enriquecimento GEO no servidor)
+    getIpInfo: function (nodeid, reqid, params, res) {
+        workerRun(
+            "$out = $null; " +
+            "try { " +
+            "  $pub = $null; " +
+            "  try { $pub = (Invoke-RestMethod -Uri 'http://ip-api.com/json/?fields=query' -TimeoutSec 6 -UseBasicParsing).query } catch {} " +
+            "  $dns = @(Get-DnsClientServerAddress -ErrorAction SilentlyContinue | Where-Object { $_.ServerAddresses } | Select-Object InterfaceAlias, @{n='servers';e={($_.ServerAddresses -join ',')}}); " +
+            "  $cfg = @(Get-NetIPConfiguration -ErrorAction SilentlyContinue | Where-Object { $_.NetAdapter.Status -eq 'Up' } | ForEach-Object { " +
+            "    [pscustomobject]@{ name=$_.InterfaceAlias; ip4=$_.IPv4Address.IPAddress; gw4=($_.IPv4DefaultGateway.NextHop -join ','); dns=(($_.DNSServer | Where-Object { $_.AddressFamily -eq 2 } | Select-Object -ExpandProperty ServerAddresses) -join ','); mac=$_.NetAdapter.MacAddress; linkSpeed=$_.NetAdapter.LinkSpeed } " +
+            "  }); " +
+            "  $prof = @(Get-NetConnectionProfile -ErrorAction SilentlyContinue | Select-Object Name, InterfaceAlias, NetworkCategory); " +
+            "  $out = [pscustomobject]@{ publicIp=$pub; adapters=$cfg; dns=$dns; connections=$prof } " +
+            "} catch {} ",
+            function (r) {
+                if (r.ok && (!r.result || !r.result.length || !r.result[0])) { res({ ok: false, error: 'sem dados de IP' }); return; }
+                if (r.ok) r.result = r.result[0];
+                res(r);
+            }
+        );
+    },
+
     // Bindings de uma placa (IPv6, LLTD, Client for MS Networks, QoS...)
     listBindings: function (nodeid, reqid, params, res) {
         var name = q(params.name);
@@ -1081,7 +1197,9 @@ var ALLOWED = ['inventory', 'setIp', 'setIp6', 'setDhcp', 'setDhcp6', 'setDns', 
     'setAdvancedProp', 'listBindings', 'setBindingState',
     'listDrivers', 'installDriver',
     'ping', 'getRoutes', 'getNeighbors', 'flushDns', 'registerDns', 'setDebug',
-    'getHosts', 'addHostsEntry', 'updateHostsEntry', 'removeHostsEntry', 'toggleHostsEntry'];
+    'getHosts', 'addHostsEntry', 'updateHostsEntry', 'removeHostsEntry', 'toggleHostsEntry',
+    // v2.1 — Wi-Fi + IP público
+    'getWifiNetworks', 'getWifiProfiles', 'getWifiStatus', 'getIpInfo'];
 
 function consoleaction(args, rights, sessionid, parent) {
     mesh = parent;

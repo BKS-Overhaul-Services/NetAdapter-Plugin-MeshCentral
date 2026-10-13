@@ -169,7 +169,107 @@ module.exports.netadapter = function (parent) {
         }
     };
 
-    // ---------------- hooks ----------------
+    // Campos do ip-api.com (free tier — HTTP only, 45 req/min, batch até 100 IPs)
+var GEO_FIELDS = 'status,message,continent,country,countryCode,region,regionName,city,zip,lat,lon,timezone,offset,currency,isp,org,as,asname,reverse,mobile,proxy,hosting,query';
+
+// ---------------- hooks ----------------
+
+    // v2.1 — GEO/IP público: enriquecimento server-side via ip-api.com
+    // free tier: HTTP only, 45 req/min, batch até 100 IPs por POST.
+    // Fluxo: agente reporta publicIp (getIpInfo) → server consulta cache NeDB →
+    // se miss, enfileira e descarrega em batch (1.5s mínimo entre requests),
+    // cacheia e entrega {method:'geoUpdate'} para as sessões esperando.
+    obj._publicIp = {};        // nodeid → ip público conhecido
+    obj._geoWait = {};         // ip → [{sid, nodeid}]
+    obj._geoTimer = null;
+    obj._geoLastFlush = 0;
+    obj._GEO_TTL = 6 * 3600 * 1000;        // cache fresco por 6h (NeDB TTL 7d)
+    obj._GEO_MIN_INTERVAL = 1500;          // ~40 req/min < 45 do free tier
+    obj._geoHttp = null;                   // injetável p/ testes (default: require('http'))
+
+    obj._geoScheduleFlush = function (delayMs) {
+        if (obj._geoTimer) return;
+        obj._geoTimer = setTimeout(function () {
+            obj._geoTimer = null;
+            obj._geoFlush();
+        }, delayMs || obj._GEO_MIN_INTERVAL);
+    };
+
+    obj._geoLookup = function (ip, sid, nodeid) {
+        if (!ip) return;
+        obj.db.getGeo(ip, function (doc) {
+            if (doc && doc.ts && (Date.now() - doc.ts) < obj._GEO_TTL) {
+                obj.send(sid, { action: 'plugin', plugin: 'netadapter', method: 'geoUpdate', nodeid: nodeid, ip: ip, geo: doc.geo, cached: true });
+                return;
+            }
+            if (!obj._geoWait[ip]) obj._geoWait[ip] = [];
+            obj._geoWait[ip].push({ sid: sid, nodeid: nodeid });
+            obj._geoScheduleFlush();
+        });
+    };
+
+    obj._geoDispatch = function (ip, list, geo, error) {
+        (list || []).forEach(function (w) {
+            obj.send(w.sid, { action: 'plugin', plugin: 'netadapter', method: 'geoUpdate', nodeid: w.nodeid, ip: ip, geo: geo || null, error: error || null });
+        });
+    };
+
+    obj._geoFlush = function () {
+        var ips = Object.keys(obj._geoWait);
+        if (!ips.length) return;
+        var now = Date.now();
+        if (now - obj._geoLastFlush < obj._GEO_MIN_INTERVAL) { obj._geoScheduleFlush(); return; }
+        obj._geoLastFlush = now;
+        var waiters = obj._geoWait;
+        obj._geoWait = {};
+        var http = obj._geoHttp || require('http');
+
+        function finish(list) {
+            ips.forEach(function (ip) {
+                var g = (list || []).filter(function (x) { return x && x.query === ip; })[0] || null;
+                if (g && g.status === 'success') {
+                    obj.db.putGeo(ip, g);
+                    obj._geoDispatch(ip, waiters[ip], g, null);
+                } else {
+                    obj._geoDispatch(ip, waiters[ip], null, (g && g.message) || 'sem resposta do ip-api');
+                }
+            });
+        }
+
+        try {
+            if (ips.length === 1) {
+                // single GET
+                var req = http.get({ host: 'ip-api.com', path: '/json/' + ips[0] + '?fields=' + GEO_FIELDS, timeout: 8000 }, function (res2) {
+                    var body = '';
+                    res2.on('data', function (c) { body += c; });
+                    res2.on('end', function () {
+                        var d = null; try { d = JSON.parse(body); } catch (e) {}
+                        finish([d]);
+                    });
+                });
+                req.on('error', function () { finish(null); });
+                req.on('timeout', function () { req.destroy(); finish(null); });
+            } else {
+                // BATCH: POST http://ip-api.com/batch (até 100 IPs por request)
+                var payload = JSON.stringify(ips.slice(0, 100));
+                var req2 = http.request({ host: 'ip-api.com', path: '/batch?fields=' + GEO_FIELDS, method: 'POST', timeout: 8000, headers: { 'Content-Type': 'application/json', 'Content-Length': Buffer.byteLength(payload) } }, function (res3) {
+                    var body = '';
+                    res3.on('data', function (c) { body += c; });
+                    res3.on('end', function () {
+                        var d = null; try { d = JSON.parse(body); } catch (e) {}
+                        finish(Array.isArray(d) ? d : null);
+                    });
+                });
+                req2.on('error', function () { finish(null); });
+                req2.on('timeout', function () { req2.destroy(); finish(null); });
+                req2.write(payload);
+                req2.end();
+            }
+        } catch (e) {
+            NA_LOG.error('_geoFlush', e);
+            finish(null);
+        }
+    };
 
     // v2.0 — dedup de audit para resultados de mutação (normal OU recuperado via journal)
     obj._mutAudited = {};
@@ -311,6 +411,12 @@ module.exports.netadapter = function (parent) {
                     delete obj.cache[p.nodeid];
                     NA_LOG.raw('cache invalidado (mutação) node=' + p.nodeid);
                 }
+                // v2.1 — getIpInfo: registra IP público e dispara enriquecimento GEO
+                if ((command.op || p.op) === 'getIpInfo' && command.ok && command.result && command.result.publicIp) {
+                    var pip = command.result.publicIp;
+                    obj._publicIp[p.nodeid] = pip;
+                    obj._geoLookup(pip, p.sid, p.nodeid);
+                }
                 obj.send(p.sid, {
                     action: 'plugin', plugin: 'netadapter', method: 'agentResult',
                     op: command.op || p.op, nodeid: p.nodeid, reqid: reqid,
@@ -374,6 +480,33 @@ module.exports.netadapter = function (parent) {
                 case 'getHosts':
                     obj.agentRequest(command, sid, user);
                     break;
+
+                // ---- v2.1: Wi-Fi + IP/GEO/DNS ----
+                case 'getWifiNetworks':
+                case 'getWifiStatus':
+                case 'getIpInfo':
+                    obj.agentRequest(command, sid, user);
+                    break;
+                case 'getWifiProfiles':
+                    // SENSÍVEL: retorna senhas Wi-Fi em claro — audita o acesso
+                    obj.agentRequest(command, sid, user);
+                    obj.audit(user, command.nodeid, 'getWifiProfiles', '(senhas wi-fi consultadas)', null, true);
+                    break;
+                case 'getGeo': {
+                    // serve geo do cache (NeDB) usando o IP público conhecido do node
+                    var gip = obj._publicIp[command.nodeid];
+                    if (!gip) { obj.send(sid, { action: 'plugin', plugin: 'netadapter', method: 'geoUpdate', nodeid: command.nodeid, error: 'IP público desconhecido — execute "Analisar IP/GEO/DNS" primeiro' }); break; }
+                    obj.db.getGeo(gip, function (doc) {
+                        if (doc && doc.ts && (Date.now() - doc.ts) < obj._GEO_TTL) {
+                            obj.send(sid, { action: 'plugin', plugin: 'netadapter', method: 'geoUpdate', nodeid: command.nodeid, ip: gip, geo: doc.geo, cached: true });
+                        } else {
+                            obj._geoWait[gip] = obj._geoWait[gip] || [];
+                            obj._geoWait[gip].push({ sid: sid, nodeid: command.nodeid });
+                            obj._geoScheduleFlush();
+                        }
+                    });
+                    break;
+                }
 
                 // ---- arquivo hosts (mutações gerenciadas) ----
                 case 'addHostsEntry':

@@ -46,6 +46,29 @@ module.exports.CreateDB = function (meshserver) {
     obj.audit.ensureIndex({ fieldName: 'nodeid' });
     obj.audit.ensureIndex({ fieldName: 'time' });
 
+    // -------------------------------------------------------------------
+    // Collection: geo/IP público (enriquecimento ip-api.com, cache com TTL)
+    // doc: { _id: 'geo:<ip>', geo: {...}, ts }
+    // TTL 7 dias via expireAfterSeconds (ip-api pede cache; 45 req/min free)
+    // -------------------------------------------------------------------
+    obj.geo = new Datastore({
+        filename: meshserver.getConfigFilePath('plugin-netadapter-geo.db'),
+        autoload: true
+    });
+    obj.geo.setAutocompactionInterval(60000);
+    try { obj.geo.ensureIndex({ fieldName: 'ts', expireAfterSeconds: 7 * 24 * 3600 }); } catch (ex) {}
+
+    obj.putGeo = function (ip, geo, cb) {
+        try {
+            obj.geo.update({ _id: 'geo:' + ip }, { _id: 'geo:' + ip, geo: geo, ts: Date.now() }, { upsert: true }, function () { if (cb) cb(); });
+        } catch (e) { if (cb) cb(e); }
+    };
+    obj.getGeo = function (ip, cb) {
+        try {
+            obj.geo.findOne({ _id: 'geo:' + ip }, function (err, doc) { cb(err ? null : (doc || null)); });
+        } catch (e) { cb(null); }
+    };
+
     // ======================= ADAPTERS (catálogo) =======================
 
     obj.upsertAdapters = function (nodeid, nodeName, list) {

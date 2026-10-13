@@ -76,7 +76,44 @@ pre.out{background:#1e1e1e;color:#d4d4d4;padding:10px;border-radius:3px;font-fam
   <button id="tDrv" onclick="switchTab('drv')">Drivers</button>
   <button id="tDiag" onclick="switchTab('diag')">Diagnóstico</button>
   <button id="tHosts" onclick="switchTab('hosts')">Hosts</button>
+  <button id="tWifi" onclick="switchTab('wifi')">Wi-Fi / IP</button>
   <button id="tAudit" onclick="switchTab('audit')">Auditoria</button>
+</div>
+
+<!-- ===== WI-FI / IP PÚBLICO ===== -->
+<div id="pane-wifi" class="pane">
+  <div class="panel">
+    <div class="panel-title">Wi-Fi — estado da conexão</div>
+    <div class="toolbar">
+      <button class="btn btn-primary" onclick="send('getWifiStatus')">Estado da conexão</button>
+      <span class="muted" id="wifiInfo"></span>
+    </div>
+    <div id="wifiStatus"><div class="empty">—</div></div>
+  </div>
+  <div class="panel">
+    <div class="panel-title">Wi-Fi — redes detectáveis</div>
+    <div class="toolbar">
+      <button class="btn btn-primary" onclick="send('getWifiNetworks')">Escanear redes</button>
+      <span class="muted" id="wifiScanInfo"></span>
+    </div>
+    <div id="wifiNetworks"><div class="empty">—</div></div>
+  </div>
+  <div class="panel">
+    <div class="panel-title">Wi-Fi — redes salvas e senhas (⚠️ sensível — auditado)</div>
+    <div class="toolbar">
+      <button class="btn btn-primary" onclick="send('getWifiProfiles')">Listar perfis + senhas</button>
+      <span class="muted" id="wifiProfInfo"></span>
+    </div>
+    <div id="wifiProfiles"><div class="empty">—</div></div>
+  </div>
+  <div class="panel">
+    <div class="panel-title">IP público / GEO / DNS (ip-api.com — enriquecido no servidor)</div>
+    <div class="toolbar">
+      <button class="btn btn-primary" onclick="send('getIpInfo')">Analisar IP/GEO/DNS</button>
+      <span class="muted" id="geoInfo"></span>
+    </div>
+    <div id="geoPanel"><div class="empty">—</div></div>
+  </div>
 </div>
 
 <!-- ===== PLACAS ===== -->
@@ -334,6 +371,7 @@ if(ms&&ms.socket){
         return;
       }
       if(d.action==='plugin'&&d.plugin==='netadapter'&&d.method==='audit'){renderAudit(d.data||[]);return;}
+      if(d.action==='plugin'&&d.plugin==='netadapter'&&d.method==='geoUpdate'){renderGeo(d);return;}
       if(d.action==='plugin'&&d.plugin==='netadapter'&&d.method==='catalog'){/* não usado no device */}
     }catch(e){}
   });
@@ -394,6 +432,11 @@ function handleResult(d){
       loadHosts(); break;
     case 'removeHostsEntry': toast('hosts: entrada removida'); loadHosts(); break;
     case 'toggleHostsEntry': toast('hosts: entrada '+(r&&r.enabled===false?'desativada':'ativada')); loadHosts(); break;
+    /* ===== v2.1 Wi-Fi / IP-GEO ===== */
+    case 'getWifiStatus': renderWifiStatus(r); break;
+    case 'getWifiNetworks': renderWifiNetworks(r||[]); break;
+    case 'getWifiProfiles': renderWifiProfiles(r||[]); break;
+    case 'getIpInfo': renderIpInfo(r); break;
   }
 }
 function setBusy(op,b){_ops[op]=b;document.querySelectorAll('button').forEach(function(x){if(x.dataset.op===op)x.disabled=b;});}
@@ -401,10 +444,11 @@ function setBusy(op,b){_ops[op]=b;document.querySelectorAll('button').forEach(fu
 /* ===== TABS ===== */
 var _tabLoaded={};
 function switchTab(n){
-  ['adapters','ip','adv','drv','diag','hosts','audit'].forEach(function(t){
+  ['adapters','ip','adv','drv','diag','hosts','wifi','audit'].forEach(function(t){
     $('t'+t.charAt(0).toUpperCase()+t.slice(1)).classList.toggle('active',t===n);
     $('pane-'+t).classList.toggle('active',t===n);
   });
+  if(n==='wifi'&&!_tabLoaded.wifi){_tabLoaded.wifi=true;send('getWifiStatus');}
   if(n==='audit'&&!_tabLoaded.audit){_tabLoaded.audit=true;loadAudit();}
   if(n==='hosts'&&!_tabLoaded.hosts){_tabLoaded.hosts=true;loadHosts();}
   if(n==='drv'&&!_drivers.length)loadDrivers();
@@ -846,6 +890,85 @@ function renderAudit(docs){
   });
   h+='</tbody></table>';
   $('auditList').innerHTML=h;
+}
+
+/* ===== v2.1 WI-FI / IP-GEO ===== */
+function wifiBadge(sig){
+  if(sig>=80)return'<span class="badge ok">Ótimo '+sig+'%</span>';
+  if(sig>=60)return'<span class="badge ok">Bom '+sig+'%</span>';
+  if(sig>=40)return'<span class="badge warn">Fraco '+sig+'%</span>';
+  return'<span class="badge err">Muito fraco '+sig+'%</span>';
+}
+function renderWifiStatus(r){
+  var el=$('wifiStatus');
+  if(!r||r.wifi===false){el.innerHTML='<div class="empty">Sem adaptador Wi-Fi (usando conexão cabeada?).</div>';return;}
+  var rows=[['Estado',r.state],['SSID',r.ssid],['BSSID',r.bssid],['Tipo de rádio',r.radio],['Autenticação',r.auth],['Criptografia',r.cipher],['Canal',r.channel?r.channel+' ('+(r.channel<=14?'2.4GHz':r.channel<=177?'5GHz':'6GHz')+')':'—'],['Recepção',r.rxRate],['Transmissão',r.txRate]];
+  var h='<table class="tbl"><tbody>';
+  rows.forEach(function(x){h+='<tr><td class="muted" style="width:180px">'+esc(x[0])+'</td><td>'+esc(x[1]==null||x[1]===''?'—':x[1])+'</td></tr>';});
+  h+='</tbody></table>';
+  if(r.signal)h+='<div style="margin-top:6px">'+wifiBadge(r.signal)+'</div>';
+  if(r.connections&&r.connections.length){
+    h+='<div class="muted" style="margin-top:8px">Perfis de conexão: ';
+    r.connections.forEach(function(c){h+='<span class="badge">'+esc(c.InterfaceAlias||c.InterfaceAlias)+' — '+esc(c.Name)+' ('+esc(c.NetworkCategory)+')</span> ';});
+    h+='</div>';
+  }
+  el.innerHTML=h;
+  $('wifiInfo').textContent='';
+}
+function renderWifiNetworks(list){
+  if(!list.length){$('wifiNetworks').innerHTML='<div class="empty">Nenhuma rede detectada (sem Wi-Fi ou nada no alcance).</div>';return;}
+  list.sort(function(a,b){return (b.signal||0)-(a.signal||0);});
+  var h='<table class="tbl"><thead><tr><th>SSID</th><th>BSSID</th><th>Sinal</th><th>Banda</th><th>Canal</th><th>Autenticação</th><th>Criptografia</th></tr></thead><tbody>';
+  list.forEach(function(n){
+    h+='<tr><td><b>'+esc(n.ssid||'(oculta)')+'</b></td><td class="muted">'+esc(n.bssid||'—')+'</td>'
+      +'<td>'+wifiBadge(n.signal||0)+'</td>'
+      +'<td>'+esc(n.band||'—')+'</td><td>'+(n.channel||'—')+'</td>'
+      +'<td>'+esc(n.auth||'—')+'</td><td>'+esc(n.cipher||'—')+'</td></tr>';
+  });
+  h+='</tbody></table>';
+  $('wifiNetworks').innerHTML=h;
+  $('wifiScanInfo').textContent=list.length+' rede(s)';
+}
+function renderWifiProfiles(list){
+  if(!list.length){$('wifiProfiles').innerHTML='<div class="empty">Nenhum perfil Wi-Fi salvo.</div>';return;}
+  var h='<table class="tbl"><thead><tr><th>Perfil</th><th>Autenticação</th><th>Criptografia</th><th>Senha</th></tr></thead><tbody>';
+  list.forEach(function(p){
+    h+='<tr><td><b>'+esc(p.name)+'</b></td><td>'+esc(p.auth||'—')+'</td><td>'+esc(p.cipher||'—')+'</td>'
+      +'<td>'+(p.hasPassword?'<code>'+esc(p.password)+'</code>':'<span class="muted">rede aberta</span>')+'</td></tr>';
+  });
+  h+='</tbody></table>';
+  $('wifiProfiles').innerHTML=h;
+  $('wifiProfInfo').textContent=list.length+' perfil(is)';
+}
+function renderIpInfo(r){
+  if(!r){$('geoPanel').innerHTML='<div class="empty">sem dados</div>';return;}
+  var h='';
+  h+='<div class="muted" style="margin-bottom:6px">IP público: <b>'+(r.publicIp?esc(r.publicIp):'não detectado (sem internet ou ip-api indisponível)')+'</b> — aguardando geo do servidor…</div>';
+  if(r.adapters&&r.adapters.length){
+    h+='<table class="tbl"><thead><tr><th>Placa (up)</th><th>IPv4</th><th>Gateway</th><th>DNS</th><th>MAC</th><th>Link</th></tr></thead><tbody>';
+    r.adapters.forEach(function(a){
+      h+='<tr><td>'+esc(a.name)+'</td><td>'+esc(a.ip4||'—')+'</td><td>'+esc(a.gw4||'—')+'</td><td class="muted">'+esc(a.dns||'—')+'</td><td class="muted">'+esc(a.mac||'—')+'</td><td class="muted">'+esc(a.linkSpeed||'—')+'</td></tr>';
+    });
+    h+='</tbody></table>';
+  }
+  if(r.dns&&r.dns.length){
+    h+='<div class="muted" style="margin-top:6px">DNS por interface: ';
+    r.dns.forEach(function(d){h+='<span class="badge">'+esc(d.InterfaceAlias)+': '+esc(d.servers)+'</span> ';});
+    h+='</div>';
+  }
+  $('geoPanel').innerHTML=h;
+  $('geoInfo').textContent='';
+}
+function renderGeo(d){
+  var info=$('geoInfo');
+  if(d.error){if(info)info.textContent='geo: '+d.error;return;}
+  var g=d.geo;if(!g){return;}
+  if(info)info.textContent='geo '+(d.cached?'(cache)':'(fresh)')+' — '+g.city+', '+g.country;
+  var rows=[['IP público',g.query||d.ip],['País',g.country+' ('+(g.countryCode||'')+')'],['Região',g.regionName],['Cidade',g.city+(g.zip?' — '+g.zip:'')],['Coordenadas',g.lat!=null?(g.lat+', '+g.lon):'—'],['Fuso',g.timezone],['ISP',g.isp],['Org',g.org],['AS',g.as],['Reverse DNS',g.reverse||'—'],['Proxy/VPN',g.proxy?'SIM':'não'],['Mobile',g.mobile?'sim':'não'],['Hosting/Datacenter',g.hosting?'SIM':'não']];
+  var h='<table class="tbl"><tbody>';
+  rows.forEach(function(x){h+='<tr><td class="muted" style="width:180px">'+esc(x[0])+'</td><td>'+esc(x[1]==null||x[1]===''?'—':x[1])+'</td></tr>';});
+  h+='</tbody></table>';
+  $('geoPanel').innerHTML=h+$('geoPanel').innerHTML.replace(/<div class="muted[^]*?aguardando geo do servidor…<\/div>/,'');
 }
 
 document.addEventListener('DOMContentLoaded',function(){
