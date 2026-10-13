@@ -1,14 +1,14 @@
 {
   "name": "NetAdapter — Gerenciador de Placas de Rede",
   "shortName": "netadapter",
-  "version": "1.0.7",
+  "version": "2.0.0-beta.1",
   "author": "Misael Filho",
-  "description": "Gerenciamento centralizado de placas de rede Windows via MeshCentral: inventário completo (status, MAC, link, IP, gateway, DNS, DHCP, perfil), configuração de IP estático/DHCP, DNS, sufixo, MTU, perfil de rede (público/privado), NetBIOS, MAC (spoof/reset), renomear, ativar/desativar, bindings (IPv6 etc.), propriedades avançadas do driver (jumbo frames, offloads, speed/duplex), drivers (listagem/instalação via INF) e diagnóstico (ping, rotas, vizinhança ARP, flush/register DNS). Auditoria de todas as operações.",
+  "description": "Gerenciamento centralizado de placas de rede Windows via MeshCentral: inventário completo (status, MAC, link, IP, gateway, DNS, DHCP, perfil), configuração de IP estático/DHCP, DNS, sufixo, MTU, perfil de rede (público/privado), NetBIOS, MAC (spoof/reset), renomear, ativar/desativar, bindings (IPv6 etc.), propriedades avançadas do driver (jumbo frames, offloads, speed/duplex), drivers (listagem/instalação via INF) e diagnóstico (ping, rotas, vizinhança ARP, flush/register DNS). Auditoria de todas as operações. v2: result-journal — resultados de mutação que derrubam a conexão sobrevivem e são auditados no reconnect.",
   "hasAdminPanel": true,
-  "homepage": "https://github.com/BKS-Overhaul-Services/NetAdapter-Plugin-MeshCentral",
-  "changelogUrl": "https://raw.githubusercontent.com/BKS-Overhaul-Services/NetAdapter-Plugin-MeshCentral/main/changelog.md",
-  "configUrl": "https://raw.githubusercontent.com/BKS-Overhaul-Services/NetAdapter-Plugin-MeshCentral/main/config.json",
-  "downloadUrl": "https://github.com/BKS-Overhaul-Services/NetAdapter-Plugin-MeshCentral/archive/refs/heads/main.zip",
+  "homepage": "https://github.com/BKS-Overhaul-Services/NetAdapter-Plugin-MeshCentral/tree/feature/result-journal",
+  "changelogUrl": "https://raw.githubusercontent.com/BKS-Overhaul-Services/NetAdapter-Plugin-MeshCentral/feature/result-journal/changelog.md",
+  "configUrl": "https://raw.githubusercontent.com/BKS-Overhaul-Services/NetAdapter-Plugin-MeshCentral/feature/result-journal/config.json",
+  "downloadUrl": "https://github.com/BKS-Overhaul-Services/NetAdapter-Plugin-MeshCentral/archive/refs/heads/feature/result-journal.zip",
   "repository": {
     "type": "git",
     "url": "https://github.com/BKS-Overhaul-Services/NetAdapter-Plugin-MeshCentral.git"
