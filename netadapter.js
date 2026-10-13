@@ -56,7 +56,17 @@ module.exports.netadapter = function (parent) {
     obj.parent = parent;
     obj.meshServer = parent.parent;
     obj.debug = obj.meshServer.debug;
-    obj.exports = ['onDeviceRefreshEnd'];
+    obj.exports = ['onDeviceRefreshEnd', 'agentResult', 'audit', 'geoUpdate', 'catalog', 'allCatalog'];
+    // No-ops para o frame PRINCIPAL do MeshCentral: ele recebe todas as mensagens
+    // {action:'plugin', method:...} e chama pluginHandler.netadapter.<method>.
+    // Sem o no-op registrado em obj.exports, prepExports não serializa a função
+    // e o main frame loga "pluginHandler[...][...] is not a function" a cada msg.
+    // As abas (iframes) fazem o trabalho real com os mesmos payloads.
+    obj.agentResult = function () {};
+    obj.audit = function () {};
+    obj.geoUpdate = function () {};
+    obj.catalog = function () {};
+    obj.allCatalog = function () {};
     obj.db = null;
     obj.mdb = obj.meshServer.db;
     obj.pending = {};   // reqid → { sid, nodeid, op, user, ts, mut }
