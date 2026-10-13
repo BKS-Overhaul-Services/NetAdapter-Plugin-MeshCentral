@@ -27,7 +27,7 @@ var SLOW_OPS = ['setIp', 'setIp6', 'setDhcp', 'setDhcp6', 'enableAdapter', 'disa
 // Configurável: gate de logs de diagnóstico (error sempre ativo)
 // v2.1: TRUE durante a homologação (validação Wi-Fi/GEO em produção) —
 // desligar para 'false' no merge final.
-var NA_DEBUG = true;
+var NA_DEBUG = false;
 
 // Categorias de log (padrão Tracer/Spooler)
 var NA_LOG = {

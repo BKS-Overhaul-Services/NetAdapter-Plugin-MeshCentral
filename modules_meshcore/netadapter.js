@@ -26,7 +26,7 @@ var mesh = null;
 // v2.1: TRUE por padrão durante a homologação — grava netadapter-plugin.txt na
 // pasta do agente. Pode ser ligado/desligado remotamente via setDebug
 // (botão "Debug agente" na aba) — o flag persiste só na sessão do core.
-var naDebugFlag = true;
+var naDebugFlag = false;
 
 // ------------------- result-journal (v2.0, padrão Tracer session-tracer) -------------------
 // Mutações que derrubam a conexão (disableAdapter, setIp, setMac...) executam no
