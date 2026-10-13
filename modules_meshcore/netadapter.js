@@ -1022,7 +1022,7 @@ var readHandlers = {
             "try { " +
             "  $raw = netsh wlan show profiles | Out-String; " +
             "  $names = @(); " +
-            "  foreach ($ln in ($raw -split \"`r?`n\")) { if ($ln -match '^\\s*(?:All User Profile|Todos os perfis de usu.rio)\\s*: (.*)$') { $names += $Matches[1].Trim() } } " +
+            "  foreach ($ln in ($raw -split \"`r?`n\")) { if ($ln -match '^\\s*(?:All User Profile|Todos os perfis de usu.rios?)\\s*: (.*)$') { $names += $Matches[1].Trim() } } " +
             "  foreach ($n in $names) { " +
             "    $p = netsh wlan show profile name=\"$n\" key=clear | Out-String; " +
             "    $auth = ''; $cipher = ''; $key = ''; " +
@@ -1065,8 +1065,8 @@ var readHandlers = {
             "      elseif ($ln -match '^\\s*(?:Cipher|Criptografia)\\s*: (.*)$') { $cipher = $Matches[1].Trim() } " +
             "      elseif ($ln -match '^\\s*(?:Signal|Sinal)\\s*: (\\d+)%') { $sig = [int]$Matches[1] } " +
             "      elseif ($ln -match '^\\s*(?:Channel|Canal)\\s*: (\\d+)') { $ch = [int]$Matches[1] } " +
-            "      elseif ($ln -match '^\\s*(?:Receive rate|Taxa de receb)\\(.*$') { $rx = ($ln -split ':')[1].Trim() } " +
-            "      elseif ($ln -match '^\\s*(?:Transmit rate|Taxa de transm)\\(.*$') { $tx = ($ln -split ':')[1].Trim() } " +
+            "      elseif ($ln -match '^\\s*(?:Receive rate|Taxa de recep..o)\\s*\\(.*$') { $rx = ($ln -split ':')[1].Trim() } " +
+            "      elseif ($ln -match '^\\s*(?:Transmit rate|Taxa de transmiss.o)\\s*\\(.*$') { $tx = ($ln -split ':')[1].Trim() } " +
             "    } " +
             "    $out = [pscustomobject]@{ wifi = $true; state = $st; ssid = $ssid; bssid = $bssid; radio = $radio; auth = $auth; cipher = $cipher; signal = $sig; channel = $ch; rxRate = $rx; txRate = $tx } " +
             "  } " +
