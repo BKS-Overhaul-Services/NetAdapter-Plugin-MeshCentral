@@ -25,6 +25,26 @@
 var mesh = null;
 var naDebugFlag = false;
 
+// ------------------- result-journal (v2.0, padrão Tracer session-tracer) -------------------
+// Mutações que derrubam a conexão (disableAdapter, setIp, setMac...) executam no
+// dispositivo mas o agentResult se perde → servidor responde timeout e o audit
+// registra mentira. O journal garante: intent write-ahead ANTES de executar,
+// resultado write-ahead DEPOIS, drain com ack no reconnect. Ver na-journal.js.
+var mutJournal = null;
+try {
+    mutJournal = require('na-journal').Create({ plugin: 'netadapter', file: 'netadapter-mutations.journal', cap: 500 });
+    mutJournal.load(); // sintetiza resultados p/ intents interrompidas por reboot
+} catch (e) { mutJournal = null; }
+
+function mutDrain() {
+    try {
+        if (mutJournal && mesh && typeof mesh.SendCommand === 'function') {
+            mutJournal.drain(function (cmd) { mesh.SendCommand(JSON.stringify(cmd)); });
+        }
+    } catch (e) { nerr('mutDrain: ' + e.message); }
+}
+try { if (mutJournal) mutJournal.startDrainTimer(function (cmd) { if (mesh && mesh.SendCommand) mesh.SendCommand(JSON.stringify(cmd)); }, 60000); } catch (e) {}
+
 function nlog(str) {
     if (naDebugFlag !== true) return;
     try {
@@ -326,6 +346,9 @@ var mutQueue = [];
 var mutRunning = false;
 
 function queueMutation(op, nodeid, reqid, params, res) {
+    // write-ahead da INTENÇÃO: se o agente morrer no meio da execução, o boot
+    // sintetiza um resultado de incerteza e o servidor audita a verdade
+    try { if (mutJournal && reqid) mutJournal.intent(reqid, op, params); } catch (e) { nerr('journal intent: ' + e.message); }
     res({ ok: true, phase: 'started', op: op });
     mutQueue.push({ op: op, nodeid: nodeid, reqid: res._reqid || reqid, params: params, res: res });
     nlog('queue: ' + op + ' len=' + mutQueue.length);
@@ -341,6 +364,14 @@ function processQueue() {
     try {
         MUTATION_HANDLERS[item.op](item.nodeid, item.reqid, item.params, function (result) {
             mutRunning = false;
+            // write-ahead do RESULTADO: sobrevive a queda de túnel/conexão
+            try {
+                if (mutJournal && item.reqid) {
+                    mutJournal.result(item.reqid, item.op, result.ok === true, result.error || null,
+                        item.params ? (item.params.name || item.params.host || item.params.infPath || null) : null);
+                    mutDrain();
+                }
+            } catch (je) { nerr('journal result: ' + je.message); }
             try { item.res(result); } catch (e2) { nerr('queue res: ' + e2.message); }
             processQueue();
         });
@@ -1056,6 +1087,11 @@ function consoleaction(args, rights, sessionid, parent) {
     mesh = parent;
     try {
         if (args.pluginaction === 'agentResult') return 'OK'; // loop guard: nunca processar própria resposta
+        if (args.cmd === 'mutack') { // confirmação do result-journal (servidor processou o batch)
+            try { if (mutJournal) mutJournal.ack(args.ids || []); } catch (e) { nerr('mutack: ' + e.message); }
+            return 'OK';
+        }
+        if (args.cmd === 'mutdrain') { mutDrain(); return 'OK'; } // server pede dreno manual (debug)
         if (!args || args.plugin !== 'netadapter') return 'OK';
         if (args.pluginaction === 'setDebug') {
             naDebugFlag = (String(args.params && args.params.value) === 'true');
