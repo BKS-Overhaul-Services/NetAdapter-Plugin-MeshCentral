@@ -1191,7 +1191,8 @@ var readHandlers = {
 };
 
 // Handlers JSON de leitura expostos como "handlers" também (dispatcher único)
-['listBindings', 'advancedProps', 'listDrivers', 'ping', 'getRoutes', 'getNeighbors'].forEach(function (op) {
+['listBindings', 'advancedProps', 'listDrivers', 'ping', 'getRoutes', 'getNeighbors',
+ 'getWifiNetworks', 'getWifiProfiles', 'getWifiStatus', 'getIpInfo'].forEach(function (op) {
     handlers[op] = readHandlers[op];
 });
 
@@ -1203,7 +1204,7 @@ MUTATION_OPS.forEach(function (op) { MUTATION_HANDLERS[op] = handlers[op]; });
 var ALLOWED = ['inventory', 'setIp', 'setIp6', 'setDhcp', 'setDhcp6', 'setDns', 'setDnsSuffix',
     'renameAdapter', 'enableAdapter', 'disableAdapter', 'setMac', 'resetMac',
     'setMtu', 'setProfile', 'setNetbios',
-    'setAdvancedProp', 'listBindings', 'setBindingState',
+    'setAdvancedProp', 'listBindings', 'setBindingState', 'advancedProps',
     'listDrivers', 'installDriver',
     'ping', 'getRoutes', 'getNeighbors', 'flushDns', 'registerDns', 'setDebug',
     'getHosts', 'addHostsEntry', 'updateHostsEntry', 'removeHostsEntry', 'toggleHostsEntry',
