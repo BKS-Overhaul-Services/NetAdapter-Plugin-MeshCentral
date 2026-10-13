@@ -1042,13 +1042,19 @@ var readHandlers = {
     },
 
     // Estado da conexão Wi-Fi atual (ou indicação de que não há wlan)
+    // Locale-proof: se o netsh não traz NENHUM marcador conhecido (SSID/State/
+    // Estado/Radio), assumimos "sem wlan" e devolvemos o retorno original cortado
+    // como note — nunca falhamos por causa de idioma.
     getWifiStatus: function (nodeid, reqid, params, res) {
         workerRun(
-            "$out = $null; " +
+            "$out = $null; $note = ''; " +
             "try { " +
-            "  $raw = netsh wlan show interfaces | Out-String; " +
-            "  if ($raw -match 'no wireless interface|sem interface') { $out = [pscustomobject]@{ wifi = $false } } " +
-            "  else { " +
+            "  $raw = netsh wlan show interfaces 2>&1 | Out-String; " +
+            "  if ($raw -notmatch 'SSID|State|Estado|Radio|Tipo de r.dio') { " +
+            "    $flat = ($raw -replace \"`r?`n\", ' ').Trim(); " +
+            "    $note = $flat.Substring(0, [Math]::Min(200, $flat.Length)); " +
+            "    $out = [pscustomobject]@{ wifi = $false; note = $note } " +
+            "  } else { " +
             "    $st = ''; $ssid = ''; $bssid = ''; $radio = ''; $auth = ''; $cipher = ''; $sig = 0; $ch = 0; $rx = ''; $tx = ''; " +
             "    foreach ($ln in ($raw -split \"`r?`n\")) { " +
             "      if ($ln -match '^\\s*(?:State|Estado)\\s*: (.*)$') { $st = $Matches[1].Trim() } " +

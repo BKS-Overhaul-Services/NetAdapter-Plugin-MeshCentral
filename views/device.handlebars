@@ -396,6 +396,7 @@ function handleResult(d){
     if(op==='setMac')dlgBusy('macBtn','macStatus',false,'Erro: '+(d.error||'falha'));
     if(op==='setDns')dlgBusy('dnsBtn','dnsStatus',false,'Erro: '+(d.error||'falha'));
     if(op==='inventory'){$('invInfo').textContent='erro: '+d.error;}
+    if(op==='getWifiStatus'||op==='getWifiNetworks'||op==='getWifiProfiles'){$('wifiInfo').textContent=$('wifiScanInfo').textContent=$('wifiProfInfo').textContent='erro: '+(d.error||'falha');}
     return;
   }
   var r=d.result;
@@ -901,7 +902,7 @@ function wifiBadge(sig){
 }
 function renderWifiStatus(r){
   var el=$('wifiStatus');
-  if(!r||r.wifi===false){el.innerHTML='<div class="empty">Sem adaptador Wi-Fi (usando conexão cabeada?).</div>';return;}
+  if(!r||r.wifi===false){el.innerHTML='<div class="empty">Sem adaptador Wi-Fi ativo.'+(r&&r.note?' <span class="muted">('+esc(r.note)+')</span>':'')+'</div>';return;}
   var rows=[['Estado',r.state],['SSID',r.ssid],['BSSID',r.bssid],['Tipo de rádio',r.radio],['Autenticação',r.auth],['Criptografia',r.cipher],['Canal',r.channel?r.channel+' ('+(r.channel<=14?'2.4GHz':r.channel<=177?'5GHz':'6GHz')+')':'—'],['Recepção',r.rxRate],['Transmissão',r.txRate]];
   var h='<table class="tbl"><tbody>';
   rows.forEach(function(x){h+='<tr><td class="muted" style="width:180px">'+esc(x[0])+'</td><td>'+esc(x[1]==null||x[1]===''?'—':x[1])+'</td></tr>';});
