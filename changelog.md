@@ -1,10 +1,21 @@
 # Changelog — NetAdapter Plugin MeshCentral
 
-## Unreleased
+## 2.1.0 (2026-10-14) — release de segurança
+### Security (P0-1 — ACL backport)
+- **ACL fail-closed em TODAS as pluginactions** (`netadapter.js`): helper `lib/plugin-acl.js` (padrão Tracer) — leitura exige `DEVICEDETAILS`, mutação exige `DEVICEDETAILS|REMOTECONTROL` (alinhado com `routeCommandToNode` do core); admin full do site tem bypass; sem resolução de usuário/rights → **DENY** (fail-closed, inclusive timeout 3s). Device tab HTTP → **403** em vez de render; handler `pluginError` na view com toast "Acesso negado".
+### Security (P0-2 — injeção PowerShell aspas duplas)
+- Novo `dq()` no agente (`modules_meshcore/netadapter.js`) para contexto double-quote PS: escapa `` " ``/`` ` ``/`$` e strip de control chars. Aplicado em `addHostsEntry`/`updateHostsEntry` (montagem de `line` antes de `-Value "$line"`) e defense-in-depth no `name=` do `netsh` em `getWifiProfiles`. Pinado em `tests/unit/ps-doublequote-escape.test.js` (10/10).
+### Security (P1-a — senhas Wi-Fi)
+- Nova permissão RBAC `wifi_secrets` (default **DENIED**, `registerPermissions` no `server_startup`); `getWifiProfiles` SEMPRE mascara a senha (`••••••••` + 2 últimos chars, original preservado server-side em `passwordMasked`); novo `revealWifiPassword` exige ACL de mutação + `wifi_secrets` (fail-closed) e audita userid+perfil; botão "Revelar" na aba Wi-Fi. Pinado em `tests/unit/wifi-secrets.test.js` (5/5).
+### Security (P1-c — GEO/IP público opt-in)
+- `geoLookup: false` por default no `config.json` (enriquecimento ip-api.com; free tier é HTTP-only). Server com `_geoEnabled()` + gates em `getGeo`/`_geoLookup`/`_geoFlush`; agente só consulta ip-api com `params.geoLookup='true'` — desligado = zero tráfego do cliente. Pinado em `tests/unit/geo-optin.test.js` (5/5).
 ### Fixed (P2-b — XSS nos views)
 - `esc()` de `views/admin.handlebars` agora escapa apóstrofo (`'` → `&#39;`), igual ao device; `onclick="openDevice('...')"` dinâmico da tabela do catálogo convertido para `data-act="openDevice"` + delegação de click.
 ### Removed (P2-c — features mortas)
 - `obj.cache` (write-only, nunca lido) removido de `netadapter.js`; `res._reqid` inexistente removido do agente (`modules_meshcore/netadapter.js`).
+
+### Notes
+- Mudanças em `modules_meshcore/` — requer **restart do MeshCentral + reconexão dos agentes** (views são lidas a quente). Suites: dispatcher 4/4, geo 5/5, mutresults 6/6, na-journal 7/7, ps-escape 10/10, wifi-secrets 5/5, geo-optin 5/5, smoke ACL 26/26.
 
 ## 1.0.7 (2026-10-07)
 ### Fixed
