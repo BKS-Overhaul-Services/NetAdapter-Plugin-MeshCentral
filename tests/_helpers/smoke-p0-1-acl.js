@@ -200,7 +200,7 @@ function grantsFromLinks(domain, user, nodeid, cb) {
 
 // ================= helper: fail-closed e domínio =================
 (function () {
-    const ACL = require(path.join(NA_ROOT, 'lib/plugin-acl.js'));
+    const ACL = require(path.join(NA_ROOT, 'vendor/plugin-lib/plugin-acl.js')); // plugin-lib v0.3.0
     // fail-closed sem API
     const FAILCLOSED_ADMIN = { _id: 'user/fc', name: 'fc', siteadmin: 0, domain: '', links: {} };
     ACL.checkNodeRights({ meshServer: { webserver: {} } }, FAILCLOSED_ADMIN, 'node//abc', function (ok) {

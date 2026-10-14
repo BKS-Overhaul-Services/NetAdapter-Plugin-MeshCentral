@@ -28,7 +28,7 @@ var SLOW_OPS = ['setIp', 'setIp6', 'setDhcp', 'setDhcp6', 'enableAdapter', 'disa
 // v2.1: TRUE durante a homologação (validação Wi-Fi/GEO em produção) —
 // desligar para 'false' no merge final.
 var NA_DEBUG = false;
-var NA_ACL = require(__dirname + '/lib/plugin-acl.js');
+var NA_ACL = require(__dirname + '/vendor/plugin-lib/plugin-acl.js'); // plugin-lib v0.3.0 (fonte única; vendor gerado — NÃO EDITAR)
 
 // Categorias de log (padrão Tracer/Spooler)
 var NA_LOG = {
