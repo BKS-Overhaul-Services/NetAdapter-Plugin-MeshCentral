@@ -1,5 +1,9 @@
 # Changelog — NetAdapter Plugin MeshCentral
 
+## Unreleased
+### Changed (plugin-lib)
+- `lib/plugin-acl.js` e `modules_meshcore/na-journal.js` agora são **vendor gerado** de [plugin-lib](../plugin-lib) v0.3.0 (`vendor/plugin-lib/` + `modules_meshcore/na-journal.js` com cabeçalho sha384 — NÃO EDITAR); novo `tests/unit/vendor-integrity.test.js` valida o hash. Fonte: `Plugins/plugin-lib` (edite `src/` e rode `tools/sync.js`).
+
 ## 2.1.0 (2026-10-14) — release de segurança
 ### Security (P0-1 — ACL backport)
 - **ACL fail-closed em TODAS as pluginactions** (`netadapter.js`): helper `lib/plugin-acl.js` (padrão Tracer) — leitura exige `DEVICEDETAILS`, mutação exige `DEVICEDETAILS|REMOTECONTROL` (alinhado com `routeCommandToNode` do core); admin full do site tem bypass; sem resolução de usuário/rights → **DENY** (fail-closed, inclusive timeout 3s). Device tab HTTP → **403** em vez de render; handler `pluginError` na view com toast "Acesso negado".
