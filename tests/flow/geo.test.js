@@ -35,6 +35,7 @@ function makeSetup() {
         wssessions2: { 'sess-1': { user: { _id: 'u', name: 'admin', siteadmin: 0xFFFFFFFF } } }
     });
     const obj = factory(parent);
+    obj._geoEnabledOverride = true; // P1-c: estes testes exercitam o fluxo ON (opt-in)
     obj.db = {
         getGeo: function (ip, cb) { cb(geoStore[ip] || null); },
         putGeo: function (ip, geo, cb) { geoStore[ip] = { ts: Date.now(), geo: geo }; if (cb) cb(); },

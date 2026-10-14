@@ -1,5 +1,11 @@
 # Changelog — NetAdapter Plugin MeshCentral
 
+## Unreleased
+### Fixed (P2-b — XSS nos views)
+- `esc()` de `views/admin.handlebars` agora escapa apóstrofo (`'` → `&#39;`), igual ao device; `onclick="openDevice('...')"` dinâmico da tabela do catálogo convertido para `data-act="openDevice"` + delegação de click.
+### Removed (P2-c — features mortas)
+- `obj.cache` (write-only, nunca lido) removido de `netadapter.js`; `res._reqid` inexistente removido do agente (`modules_meshcore/netadapter.js`).
+
 ## 1.0.7 (2026-10-07)
 ### Fixed
 - **Aba Hosts poluída com o header do arquivo**: linhas de comentário puro (`# Copyright...`, docs de exemplo do Windows) eram tratadas como "entradas desativadas", com IP inventado ("Copyright", "This"...). Fix duplo: agente (`getHosts`) só emite linha comentada se for entrada gerenciada nossa (`#na:<id>`); frontend filtra defensivamente (`managed` OU ip+hostnames presentes). Tabela agora mostra só entradas reais.

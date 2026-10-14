@@ -76,7 +76,7 @@ table.tbl tr:hover td{background:#e8f0f8}
 var ms=(typeof parent!=='undefined'&&parent.meshserver)||window.meshserver;
 var D=[], _catalog=[];
 function dlog(){var a=Array.prototype.slice.call(arguments);D.push(new Date().toLocaleTimeString()+' '+a.join(' '));var e=document.getElementById('debug');if(e)e.innerHTML=D.slice(-80).join('\n');}
-function esc(s){return String(s==null?'':s).replace(/&/g,'&amp;').replace(/</g,'&lt;').replace(/>/g,'&gt;').replace(/"/g,'&quot;');}
+function esc(s){return String(s==null?'':s).replace(/&/g,'&amp;').replace(/</g,'&lt;').replace(/>/g,'&gt;').replace(/"/g,'&quot;').replace(/'/g,'&#39;');} // P2-b: apóstrofo escapado (anti-XSS em onclick/attr)
 function $(id){return document.getElementById(id);}
 
 function openDevice(nid){
@@ -87,6 +87,12 @@ function openDevice(nid){
   }catch(e){}
   dlog('openDevice '+nid);
 }
+
+// P2-b — delegação de clicks (sem onclick inline com valores dinâmicos)
+document.addEventListener('click',function(ev){
+  var t=ev.target&&ev.target.closest?ev.target.closest('[data-act="openDevice"]'):null;
+  if(t)openDevice(t.dataset.name);
+});
 
 if(ms&&ms.socket){
   ms.socket.addEventListener('message',function(event){
@@ -137,7 +143,7 @@ function renderCatalog(list){
     var st=String(p.status||'');
     var badge=st==='Up'?'<span class="badge ok">Up</span>':st==='Disabled'?'<span class="badge off">Desativada</span>':st==='Disconnected'?'<span class="badge">Sem link</span>':'<span class="badge err">'+esc(st||'—')+'</span>';
     h+='<tr>'
-      +'<td><span class="open-link" onclick="openDevice(\''+esc(p.nodeid)+'\')" title="Abrir dispositivo">'+esc(p.nodeName||p.nodeid)+'</span></td>'
+      +'<td><span class="open-link" data-act="openDevice" data-name="'+esc(p.nodeid)+'" title="Abrir dispositivo">'+esc(p.nodeName||p.nodeid)+'</span></td>' // P2-b
       +'<td><b>'+esc(p.name)+'</b></td>'
       +'<td class="muted">'+esc(p.description||'—')+'</td>'
       +'<td class="muted">'+esc(p.mac||'—')+'</td>'

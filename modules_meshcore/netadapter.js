@@ -304,6 +304,18 @@ function q(s) {
     return String(s == null ? '' : s).replace(/'/g, "''").replace(/[\x00-\x08\x0B\x0C\x0E-\x1F]/g, '');
 }
 
+// P0-2 — Sanitiza string para uso dentro de ASPAS DUPLAS PS. No contexto
+// double-quote, PS expande $var, $(subexpressão), `e (backtick é o char de
+// escape) e fecha a string num " — injection se o valor vem do usuário.
+// Escape: ` → `` ; " → `" ; $ → `$ ; control chars fora.
+function dq(s) {
+    return String(s == null ? '' : s)
+        .replace(/`/g, '``')
+        .replace(/"/g, '`"')
+        .replace(/\$/g, '`$')
+        .replace(/[\x00-\x08\x0B\x0C\x0E-\x1F]/g, '');
+}
+
 // ------------------- hosts helpers -------------------
 
 function _hostsNewId() {
@@ -353,7 +365,7 @@ function queueMutation(op, nodeid, reqid, params, res) {
     // sintetiza um resultado de incerteza e o servidor audita a verdade
     try { if (mutJournal && reqid) mutJournal.intent(reqid, op, params); } catch (e) { nerr('journal intent: ' + e.message); }
     res({ ok: true, phase: 'started', op: op });
-    mutQueue.push({ op: op, nodeid: nodeid, reqid: res._reqid || reqid, params: params, res: res });
+    mutQueue.push({ op: op, nodeid: nodeid, reqid: reqid, params: params, res: res }); // P2-c: res._reqid nunca existiu
     nlog('queue: ' + op + ' len=' + mutQueue.length);
     processQueue();
 }
@@ -855,7 +867,10 @@ var handlers = {
         var entry = _hostsValidate(params);
         if (entry.error) { res({ ok: false, error: entry.error }); return; }
         var id = _hostsNewId();
-        var line = entry.ip + '\t' + entry.hns.join(' ') + (entry.cmt ? ('\t# ' + entry.cmt) : '') + ' #na:' + id;
+        // P0-2 — line interpolada em contexto double-quote PS (-Value "$line"):
+        // montada JÁ com dq() aplicado a cada campo que pode conter meta-char
+        // (cmt vem do usuário; ip/hns são regex-validados, id é [A-Za-z0-9]).
+        var line = dq(entry.ip) + '\t' + dq(entry.hns.join(' ')) + (entry.cmt ? ('\t# ' + dq(entry.cmt)) : '') + ' #na:' + id;
         runText(
             "$ErrorActionPreference='Stop'; " +
             "try { " +
@@ -878,7 +893,7 @@ var handlers = {
         if (!/^[A-Za-z0-9]+$/.test(id)) { res({ ok: false, error: 'id invalido' }); return; }
         var entry = _hostsValidate(params);
         if (entry.error) { res({ ok: false, error: entry.error }); return; }
-        var line = entry.ip + '\t' + entry.hns.join(' ') + (entry.cmt ? ('\t# ' + entry.cmt) : '') + ' #na:' + id;
+        var line = dq(entry.ip) + '\t' + dq(entry.hns.join(' ')) + (entry.cmt ? ('\t# ' + dq(entry.cmt)) : '') + ' #na:' + id;
         runText(
             "$ErrorActionPreference='Stop'; " +
             "try { " +
@@ -1027,7 +1042,7 @@ var readHandlers = {
             "  $names = @(); " +
             "  foreach ($ln in ($raw -split \"`r?`n\")) { if ($ln -match '^\\s*(?:All User Profile|Todos os perfis de usu.rios?)\\s*: (.*)$') { $names += $Matches[1].Trim() } } " +
             "  foreach ($n in $names) { " +
-            "    $p = netsh wlan show profile name=\"$n\" key=clear | Out-String; " +
+            "    $p = netsh wlan show profile name=`\"$n`\" key=clear | Out-String; " + // P0-2: ` escape (nome vem do output netsh, defense-in-depth)
             "    $auth = ''; $cipher = ''; $key = ''; " +
             "    foreach ($ln in ($p -split \"`r?`n\")) { " +
             "      if ($ln -match '^\\s*(?:Authentication|Autentica..o)\\s*: (.*)$') { $auth = $Matches[1].Trim() } " +
@@ -1039,6 +1054,34 @@ var readHandlers = {
             "} catch {} ",
             function (r) {
                 if (r.ok && (!r.result || !r.result.length)) r.result = [];
+                res(r);
+            }
+        );
+    },
+
+    // P1-a — Revela UMA senha em claro. Server já gateou permissão wifi_secrets
+    // (default denied) e auditou. Handler reusa o PS do getWifiProfiles com
+    // filtro por nome (q() nas aspas duplas — P0-2).
+    revealWifiPassword: function (nodeid, reqid, params, res) {
+        var pname = String(params && params.name || '').trim();
+        if (!pname) { res({ ok: false, error: 'name obrigatorio (perfil wi-fi)' }); return; }
+        var pnDq = pname.replace(/[`"]/g, ''); // nome de perfil wi-fi não tem ` nem " legítimos
+        workerRun(
+            "$out = @(); " +
+            "try { " +
+            "  $p = netsh wlan show profile name=`\"" + pnDq + "`\" key=clear | Out-String; " +
+            "  if ($p -match 'n.o existe|not found|nenhum perfil') { Write-Output 'ERR:perfil nao encontrado'; exit } " +
+            "  $auth = ''; $cipher = ''; $key = ''; " +
+            "  foreach ($ln in ($p -split \"`r?`n\")) { " +
+            "    if ($ln -match '^\\s*(?:Authentication|Autentica..o)\\s*: (.*)$') { $auth = $Matches[1].Trim() } " +
+            "    elseif ($ln -match '^\\s*(?:Cipher|Criptografia)\\s*: (.*)$') { $cipher = $Matches[1].Trim() } " +
+            "    elseif ($ln -match '^\\s*(?:Key Content|Conte.do da Chave)\\s*: (.*)$') { $key = $Matches[1].Trim() } " +
+            "  } " +
+            "  $out += [pscustomobject]@{ name='" + pnDq.replace(/'/g, "''") + "'; auth=$auth; cipher=$cipher; hasPassword=($key -ne ''); password=$key } " +
+            "} catch {} ",
+            function (r) {
+                if (r.ok && (!r.result || !r.result.length)) { res({ ok: false, error: 'perfil nao encontrado ou sem resposta' }); return; }
+                if (r.ok) r.result = r.result[0];
                 res(r);
             }
         );
@@ -1086,11 +1129,15 @@ var readHandlers = {
 
     // IP local + público + DNS + perfis de conexão (base p/ enriquecimento GEO no servidor)
     getIpInfo: function (nodeid, reqid, params, res) {
+        // P1-c — opt-in: o servidor repassa params.geoLookup ('true'/'false') alinhado
+        // ao config.json dele. Off (default) → NEM o agente consulta ip-api
+        // (o IP público ficaria de fora; o enriquecimento GEO também está off).
+        var geoOn = (String(params && params.geoLookup) === 'true');
         workerRun(
             "$out = $null; " +
             "try { " +
             "  $pub = $null; " +
-            "  try { $pub = (Invoke-RestMethod -Uri 'http://ip-api.com/json/?fields=query' -TimeoutSec 6 -UseBasicParsing).query } catch {} " +
+            (geoOn ? "  try { $pub = (Invoke-RestMethod -Uri 'http://ip-api.com/json/?fields=query' -TimeoutSec 6 -UseBasicParsing).query } catch {} " : "  $pub = $null; ") +
             "  $dns = @(Get-DnsClientServerAddress -ErrorAction SilentlyContinue | Where-Object { $_.ServerAddresses } | Select-Object InterfaceAlias, @{n='servers';e={($_.ServerAddresses -join ',')}}); " +
             "  $cfg = @(Get-NetIPConfiguration -ErrorAction SilentlyContinue | Where-Object { $_.NetAdapter.Status -eq 'Up' } | ForEach-Object { " +
             "    [pscustomobject]@{ name=$_.InterfaceAlias; ip4=$_.IPv4Address.IPAddress; gw4=($_.IPv4DefaultGateway.NextHop -join ','); dns=(($_.DNSServer | Where-Object { $_.AddressFamily -eq 2 } | Select-Object -ExpandProperty ServerAddresses) -join ','); mac=$_.NetAdapter.MacAddress; linkSpeed=$_.NetAdapter.LinkSpeed } " +
@@ -1192,7 +1239,8 @@ var readHandlers = {
 
 // Handlers JSON de leitura expostos como "handlers" também (dispatcher único)
 ['listBindings', 'advancedProps', 'listDrivers', 'ping', 'getRoutes', 'getNeighbors',
- 'getWifiNetworks', 'getWifiProfiles', 'getWifiStatus', 'getIpInfo'].forEach(function (op) {
+ 'getWifiNetworks', 'getWifiProfiles', 'getWifiStatus', 'getIpInfo',
+ 'revealWifiPassword'].forEach(function (op) {
     handlers[op] = readHandlers[op];
 });
 
@@ -1209,7 +1257,9 @@ var ALLOWED = ['inventory', 'setIp', 'setIp6', 'setDhcp', 'setDhcp6', 'setDns', 
     'ping', 'getRoutes', 'getNeighbors', 'flushDns', 'registerDns', 'setDebug',
     'getHosts', 'addHostsEntry', 'updateHostsEntry', 'removeHostsEntry', 'toggleHostsEntry',
     // v2.1 — Wi-Fi + IP público
-    'getWifiNetworks', 'getWifiProfiles', 'getWifiStatus', 'getIpInfo'];
+    'getWifiNetworks', 'getWifiProfiles', 'getWifiStatus', 'getIpInfo',
+    // P1-a — revelação em claro de senha Wi-Fi (server já gateou wifi_secrets)
+    'revealWifiPassword'];
 
 function consoleaction(args, rights, sessionid, parent) {
     mesh = parent;

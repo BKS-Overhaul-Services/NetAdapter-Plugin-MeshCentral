@@ -28,6 +28,7 @@ var SLOW_OPS = ['setIp', 'setIp6', 'setDhcp', 'setDhcp6', 'enableAdapter', 'disa
 // v2.1: TRUE durante a homologação (validação Wi-Fi/GEO em produção) —
 // desligar para 'false' no merge final.
 var NA_DEBUG = false;
+var NA_ACL = require(__dirname + '/lib/plugin-acl.js');
 
 // Categorias de log (padrão Tracer/Spooler)
 var NA_LOG = {
@@ -58,6 +59,39 @@ module.exports.netadapter = function (parent) {
     obj.parent = parent;
     obj.meshServer = parent.parent;
     obj.debug = obj.meshServer.debug;
+    // P0-1 — Envia erro estruturado de volta ao iframe (decisão de design P0-1
+    // registrada em memorias-geral: nada executa no agente; o frontend trata
+    // method:'pluginError').
+    obj._sendPluginError = function (sid, pluginaction, nodeid, error, status) {
+        obj.send(sid, { action: 'plugin', plugin: 'netadapter', method: 'pluginError',
+            pluginaction: pluginaction, nodeid: nodeid || null, ok: false,
+            error: error, status: status || 403 });
+    };
+
+    // P0-1 — Porta de entrada da ACL p/ comandos do frontend. cb(true) → prossegue.
+    // Toda leitura de dados do dispositivo (inclusive local-only getCatalog/
+    // getAudit) exige MESHRIGHT_DEVICEDETAILS sobre o nodeid; getAllCatalog é
+    // multi-node → exige admin full. MUTAÇÕES exigem REMOTECONTROL adicional.
+    obj._authorizeFrontend = function (command, sid, myparent, requiredBits, cb) {
+        var user = NA_ACL.getUser(myparent, command.userid, obj);
+        if (command.pluginaction === 'getAllCatalog') {
+            if (!NA_ACL.isAdminFull(user)) {
+                NA_LOG.raw('ACL DENIED (getAllCatalog requer admin full) user=' + (user ? user._id : 'null'));
+                obj._sendPluginError(sid, command.pluginaction, null, 'access denied', 403);
+                return cb(false);
+            }
+            return cb(true);
+        }
+        NA_ACL.checkNodeRights(obj, user, command.nodeid, function (ok, rights) {
+            if (!ok) {
+                NA_LOG.raw('ACL DENIED op=' + command.pluginaction + ' node=' + command.nodeid +
+                    ' user=' + (user ? user._id : 'null') + ' rights=0x' + (rights || 0).toString(16));
+                obj._sendPluginError(sid, command.pluginaction, command.nodeid, 'access denied', 403);
+                return cb(false);
+            }
+            cb(true);
+        }, { requiredBits: requiredBits || NA_ACL.MESHRIGHT_DEVICEDETAILS });
+    };
     obj.exports = ['onDeviceRefreshEnd', 'agentResult', 'audit', 'geoUpdate', 'catalog', 'allCatalog'];
     // No-ops para o frame PRINCIPAL do MeshCentral: ele recebe todas as mensagens
     // {action:'plugin', method:...} e chama pluginHandler.netadapter.<method>.
@@ -70,9 +104,10 @@ module.exports.netadapter = function (parent) {
     obj.catalog = function () {};
     obj.allCatalog = function () {};
     obj.db = null;
-    obj.mdb = obj.meshServer.db;
     obj.pending = {};   // reqid → { sid, nodeid, op, user, ts, mut }
-    obj.cache = {};     // nodeid → { adapters[], ts } (invalidado em mutação)
+    // P2-c — obj.cache REMOVIDO: era write-only (populado no inventory e
+    // invalidado nas mutações, mas JAMAIS lido — nenhum getCatalog do frontend
+    // o consultava; o catálogo persistente é o NeDB via db.js).
 
     obj.server_startup = function () {
         try {
@@ -80,8 +115,27 @@ module.exports.netadapter = function (parent) {
             obj.meshServer.pluginHandler.netadapter_db = require(__dirname + '/db.js').CreateDB(obj.meshServer);
             obj.db = obj.meshServer.pluginHandler.netadapter_db;
             NA_LOG.info('server_startup: db initialized db=' + (obj.db.adapters ? 'ok' : 'FAIL'));
+            // P1-a — permissão dedicada para segredos Wi-Fi (padrão Tracer
+            // usertracer.js:126-140). DEFAULT DENIED: ver senha em claro é
+            // exceção que o admin concede, não regra.
+            if (obj.parent && typeof obj.parent.registerPermissions === 'function') {
+                try {
+                    obj.parent.registerPermissions('netadapter', {
+                        wifi_secrets: {
+                            title: 'NetAdapter: revelar senhas Wi-Fi',
+                            desc: 'Permite revelar senhas de redes Wi-Fi salvas nos dispositivos (key=clear). Sem isto, as senhas aparecem mascaradas.',
+                            default: 'denied'
+                        }
+                    });
+                    NA_LOG.info('registerPermissions: netadapter.wifi_secrets (default denied)');
+                } catch (pE) { NA_LOG.error('registerPermissions', pE); }
+            }
             // limpeza de pendings antigos
-            setInterval(function () {
+            // [P2-c] .unref() (padrão Tracer usertracer.js:117): timer de housekeeping
+            // não deve segurar o event loop (a suite NA saía pendurada — wifi-secrets.
+            // test.js chama server_startup; o outro holder era o autocompaction do
+            // NeDB, limpo no próprio teste).
+            var _pendingTimer = setInterval(function () {
                 var now = Date.now();
                 for (var r in obj.pending) {
                     var p = obj.pending[r];
@@ -93,6 +147,7 @@ module.exports.netadapter = function (parent) {
                     }
                 }
             }, 30000);
+            if (_pendingTimer && typeof _pendingTimer.unref === 'function') _pendingTimer.unref();
         } catch (e) { NA_LOG.error('server_startup', e, { step: 'init' }); }
     };
 
@@ -181,6 +236,17 @@ module.exports.netadapter = function (parent) {
         }
     };
 
+    // P1-c — Enriquecimento GEO via ip-api.com é OPT-IN: config.json do plugin
+// {"geoLookup": false} por padrão (não vaza IP público dos devices p/ terceiro).
+// ⚠️ ip-api.com free tier é HTTP-ONLY (HTTPS exige tier pago) — mesmo ligado,
+// o tráfego vai em claro; documentado no config.json. O admin que liga assume.
+// _geoEnabled(): lido em runtime (testes podem sobrescrever _geoEnabledOverride).
+obj._geoEnabledOverride = null;
+obj._geoEnabled = function () {
+    if (obj._geoEnabledOverride !== null) return obj._geoEnabledOverride === true;
+    try { return require('./config.json').geoLookup === true; } catch (_) { return false; }
+};
+
     // Campos do ip-api.com (free tier — HTTP only, 45 req/min, batch até 100 IPs)
 var GEO_FIELDS = 'status,message,continent,country,countryCode,region,regionName,city,zip,lat,lon,timezone,offset,currency,isp,org,as,asname,reverse,mobile,proxy,hosting,query';
 
@@ -209,6 +275,17 @@ var GEO_FIELDS = 'status,message,continent,country,countryCode,region,regionName
 
     obj._geoLookup = function (ip, sid, nodeid) {
         if (!ip) return;
+        if (!obj._geoEnabled()) {
+            // P1-c — opt-in off: serve só cache local (se houver), nunca consulta ip-api
+            obj.db.getGeo(ip, function (doc) {
+                if (doc && doc.ts && (Date.now() - doc.ts) < obj._GEO_TTL) {
+                    obj.send(sid, { action: 'plugin', plugin: 'netadapter', method: 'geoUpdate', nodeid: nodeid, ip: ip, geo: doc.geo, cached: true });
+                } else {
+                    obj.send(sid, { action: 'plugin', plugin: 'netadapter', method: 'geoUpdate', nodeid: nodeid, ip: ip, error: 'geoLookup desativado (config.json do plugin: geoLookup:true para habilitar)' });
+                }
+            });
+            return;
+        }
         obj.db.getGeo(ip, function (doc) {
             if (doc && doc.ts && (Date.now() - doc.ts) < obj._GEO_TTL) {
                 obj.send(sid, { action: 'plugin', plugin: 'netadapter', method: 'geoUpdate', nodeid: nodeid, ip: ip, geo: doc.geo, cached: true });
@@ -227,6 +304,7 @@ var GEO_FIELDS = 'status,message,continent,country,countryCode,region,regionName
     };
 
     obj._geoFlush = function () {
+        if (!obj._geoEnabled()) { obj._geoWait = {}; return; } // P1-c: opt-in off — nada sai do server
         var ips = Object.keys(obj._geoWait);
         if (!ips.length) return;
         var now = Date.now();
@@ -322,7 +400,6 @@ var GEO_FIELDS = 'status,message,continent,country,countryCode,region,regionName
                     var detail = (r.ok ? 'executado' : (r.error || 'erro')) + ' (recuperado via journal)';
                     if (r.synthetic) detail += ' [agente reiniciou no meio da mutação]';
                     obj.audit(user, nodeid, op, r.target || null, detail, r.ok === true);
-                    if (obj.cache[nodeid]) { delete obj.cache[nodeid]; } // mutação → invalida catálogo
                     if (sid) {
                         obj.send(sid, {
                             action: 'plugin', plugin: 'netadapter', method: 'agentResult',
@@ -410,7 +487,6 @@ var GEO_FIELDS = 'status,message,continent,country,countryCode,region,regionName
                             if (ad[f] != null && !Array.isArray(ad[f])) ad[f] = [ad[f]];
                         });
                     });
-                    obj.cache[p.nodeid] = { adapters: adapters, ts: Date.now() };
                     try {
                         if (obj.db && obj.db.upsertAdapters) {
                             obj.db.upsertAdapters(p.nodeid, obj.getNodeName(p.nodeid), adapters);
@@ -418,16 +494,22 @@ var GEO_FIELDS = 'status,message,continent,country,countryCode,region,regionName
                         }
                     } catch (dbE) { NA_LOG.error('inventory:catalog', dbE); }
                 }
-                // mutação concluída: invalida cache do node (próximo inventory refetcha)
-                if (p.mut && obj.cache[p.nodeid]) {
-                    delete obj.cache[p.nodeid];
-                    NA_LOG.raw('cache invalidado (mutação) node=' + p.nodeid);
-                }
                 // v2.1 — getIpInfo: registra IP público e dispara enriquecimento GEO
                 if ((command.op || p.op) === 'getIpInfo' && command.ok && command.result && command.result.publicIp) {
                     var pip = command.result.publicIp;
                     obj._publicIp[p.nodeid] = pip;
                     obj._geoLookup(pip, p.sid, p.nodeid);
+                }
+                // P1-a — getWifiProfiles SEMPRE chega mascarado ao browser
+                // (últimos 2 chars). Revelação em claro só via revealWifiPassword
+                // (pluginaction dedicada, permissão wifi_secrets + audit).
+                if ((command.op || p.op) === 'getWifiProfiles' && command.ok && Array.isArray(command.result)) {
+                    command.result.forEach(function (w) {
+                        if (w && w.hasPassword && typeof w.password === 'string' && w.password.length) {
+                            w.passwordMasked = w.password;
+                            w.password = w.password.length <= 2 ? '••' : ('••••••••' + w.password.slice(-2));
+                        }
+                    });
                 }
                 obj.send(p.sid, {
                     action: 'plugin', plugin: 'netadapter', method: 'agentResult',
@@ -440,7 +522,19 @@ var GEO_FIELDS = 'status,message,continent,country,countryCode,region,regionName
             // ---------- comandos do frontend ----------
             var user = command.userid || '?';
 
-            switch (command.pluginaction) {
+            // P0-1 — ACL: mutações exigem DEVICEDETAILS+REMOTECONTROL; demais,
+            // DEVICEDETAILS. Admin full bypassa (helper). Nega com pluginError.
+            var MUT_REQUIRED = NA_ACL.MESHRIGHT_DEVICEDETAILS | NA_ACL.MESHRIGHT_REMOTECONTROL;
+            obj._authorizeFrontend(command, sid, myparent,
+                (MUTATION_SERVER_OPS.indexOf(command.pluginaction) !== -1) ? MUT_REQUIRED : NA_ACL.MESHRIGHT_DEVICEDETAILS,
+                function (allowed) {
+                    if (!allowed) return;
+                    naDispatch();
+                });
+
+            function naDispatch() {
+
+                switch (command.pluginaction) {
 
                 // ---- inventário / catálogo ----
                 case 'inventory':
@@ -497,12 +591,45 @@ var GEO_FIELDS = 'status,message,continent,country,countryCode,region,regionName
                 case 'getWifiNetworks':
                 case 'getWifiStatus':
                 case 'getIpInfo':
+                    if (command.pluginaction === 'getIpInfo') {
+                        command.params = command.params || {};
+                        command.params.geoLookup = obj._geoEnabled() ? 'true' : 'false'; // P1-c: alinha agente ao opt-in do server
+                    }
                     obj.agentRequest(command, sid, user);
                     break;
                 case 'getWifiProfiles':
-                    // SENSÍVEL: retorna senhas Wi-Fi em claro — audita o acesso
+                    // P1-a: resposta SEMPRE mascarada (ver agentResult); audita a consulta
                     obj.agentRequest(command, sid, user);
-                    obj.audit(user, command.nodeid, 'getWifiProfiles', '(senhas wi-fi consultadas)', null, true);
+                    break;
+                case 'revealWifiPassword':
+                    // P1-a — revelação em claro: exige DEVICEDETAILS+REMOTECONTROL
+                    // (é mutação de exposição de segredo) E permissão dedicada
+                    // wifi_secrets (default denied). Audit SEMPRE, com userid.
+                    obj._authorizeFrontend(command, sid, myparent,
+                        NA_ACL.MESHRIGHT_DEVICEDETAILS | NA_ACL.MESHRIGHT_REMOTECONTROL,
+                        function (allowed) {
+                            if (!allowed) return;
+                            var rlUser = NA_ACL.getUser(myparent, command.userid, obj);
+                            if (obj.parent && typeof obj.parent.getAccessPermissions === 'function') {
+                                obj.parent.getAccessPermissions('netadapter', rlUser, { nodeid: command.nodeid })
+                                    .then(function (has) {
+                                        if (!has('wifi_secrets')) {
+                                            NA_LOG.raw('revealWifiPassword DENIED (sem wifi_secrets) user=' + (rlUser ? rlUser._id : 'null'));
+                                            obj._sendPluginError(sid, 'revealWifiPassword', command.nodeid, 'permission wifi_secrets denied', 403);
+                                            return;
+                                        }
+                                        obj.audit(rlUser ? rlUser._id : user, command.nodeid, 'revealWifiPassword',
+                                            'perfil: ' + (command.params && command.params.name || '?'), null, true);
+                                        obj.agentRequest(command, sid, user);
+                                    })
+                                    .catch(function () {
+                                        obj._sendPluginError(sid, 'revealWifiPassword', command.nodeid, 'permission check failed', 403);
+                                    });
+                            } else {
+                                // sem API de permissões (core antigo): fail-closed
+                                obj._sendPluginError(sid, 'revealWifiPassword', command.nodeid, 'permission API unavailable', 403);
+                            }
+                        });
                     break;
                 case 'getGeo': {
                     // serve geo do cache (NeDB) usando o IP público conhecido do node
@@ -512,6 +639,7 @@ var GEO_FIELDS = 'status,message,continent,country,countryCode,region,regionName
                         if (doc && doc.ts && (Date.now() - doc.ts) < obj._GEO_TTL) {
                             obj.send(sid, { action: 'plugin', plugin: 'netadapter', method: 'geoUpdate', nodeid: command.nodeid, ip: gip, geo: doc.geo, cached: true });
                         } else {
+                            if (!obj._geoEnabled()) { obj.send(sid, { action: 'plugin', plugin: 'netadapter', method: 'geoUpdate', nodeid: command.nodeid, ip: gip, error: 'geoLookup desativado (config.json do plugin: geoLookup:true para habilitar)' }); return; } // P1-c (callback: return, não break)
                             obj._geoWait[gip] = obj._geoWait[gip] || [];
                             obj._geoWait[gip].push({ sid: sid, nodeid: command.nodeid });
                             obj._geoScheduleFlush();
@@ -565,6 +693,7 @@ var GEO_FIELDS = 'status,message,continent,country,countryCode,region,regionName
                     });
                 }
             }
+                }
         } catch (e) {
             NA_LOG.error('serveraction', e, { pluginaction: command ? command.pluginaction : 'N/A' });
         }
@@ -575,10 +704,23 @@ var GEO_FIELDS = 'status,message,continent,country,countryCode,region,regionName
             NA_LOG.raw('handleAdminReq url=' + req.url + ' user=' + (user ? user.name : 'null'));
             if (req.query.user == 1) {
                 // aba do dispositivo
-                return res.render('device', {
-                    nodeid: req.query.nodeid || '',
-                    nodeName: req.query.nodeid ? obj.getNodeName(req.query.nodeid) : 'Desconhecido'
+                // P0-1 — ACL por node antes do render (padrão Tracer :439-475;
+                // não confiar em ?user=1). Fail-closed: 403 sem direito.
+                var aclUser = NA_ACL.getUser({ user: user }, user && user._id, obj);
+                var aclNid = req.query.nodeid;
+                if (!aclNid) { res.sendStatus(400); return; }
+                NA_ACL.checkNodeRights(obj, aclUser, aclNid, function (ok) {
+                    if (!ok) {
+                        NA_LOG.raw('handleAdminReq: 403 device tab node=' + aclNid + ' user=' + (aclUser ? aclUser._id : 'null'));
+                        res.sendStatus(403);
+                        return;
+                    }
+                    res.render('device', {
+                        nodeid: aclNid,
+                        nodeName: obj.getNodeName(aclNid)
+                    });
                 });
+                return;
             }
             if (!user || (user.siteadmin & 0xFFFFFFFF) == 0) {
                 NA_LOG.raw('handleAdminReq: 401 para ' + (user ? user.name : 'anônimo'));

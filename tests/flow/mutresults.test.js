@@ -46,7 +46,6 @@ test('mutresults: pending aberto → fecha com resultado real, audita, notifica 
     const { obj, agentConn, captured, audits } = makeSetup();
     // simula request em andamento (agente executando a mutação)
     obj.pending['na-r1'] = { sid: 'sess-1', nodeid: 'node//domain/n1', op: 'disableAdapter', user: user(), ts: Date.now(), mut: true };
-    obj.cache['node//domain/n1'] = { adapters: [], ts: Date.now() };
 
     mutResults(obj, agentConn, [
         { id: 'na-r1', k: 'r', op: 'disableAdapter', ok: true, error: null, target: 'Ethernet 2', ts: Date.now() }
@@ -66,8 +65,7 @@ test('mutresults: pending aberto → fecha com resultado real, audita, notifica 
     assert.equal(audits[0].ok, true);
     assert.match(audits[0].detail, /recuperado via journal/);
     assert.equal(audits[0].target, 'Ethernet 2');
-    // cache de catálogo invalidado (mutação)
-    assert.equal(obj.cache['node//domain/n1'], undefined);
+    // P2-c: obj.cache REMOVIDO (write-only) — sem asserção de invalidação
     // ack p/ o agente (mock parseia a JSON string; contrato servidor→agente é string)
     assert.ok(agentConn.sent.length >= 1);
     const ack = agentConn.sent[0];

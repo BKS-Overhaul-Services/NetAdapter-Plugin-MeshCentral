@@ -352,7 +352,7 @@ var D=[];
 var _adapters=[], _drivers=[], _bindings=[], _ops={};
 
 function dlog(){var a=Array.prototype.slice.call(arguments);D.push(new Date().toLocaleTimeString()+' '+a.join(' '));var e=document.getElementById('debug');if(e)e.innerHTML=D.slice(-80).join('\n');}
-function esc(s){return String(s==null?'':s).replace(/&/g,'&amp;').replace(/</g,'&lt;').replace(/>/g,'&gt;').replace(/"/g,'&quot;');}
+function esc(s){return String(s==null?'':s).replace(/&/g,'&amp;').replace(/</g,'&lt;').replace(/>/g,'&gt;').replace(/"/g,'&quot;').replace(/'/g,'&#39;');} // P2-b
 function $(id){return document.getElementById(id);}
 function toast(msg,err){var t=$('toast');t.textContent=msg;t.className='toast'+(err?' err':'');t.style.display='block';clearTimeout(t._h);t._h=setTimeout(function(){t.style.display='none';},6000);}
 function closeDlg(id){var d=$(id);if(d.open)d.close();}
@@ -372,6 +372,7 @@ if(ms&&ms.socket){
       }
       if(d.action==='plugin'&&d.plugin==='netadapter'&&d.method==='audit'){renderAudit(d.data||[]);return;}
       if(d.action==='plugin'&&d.plugin==='netadapter'&&d.method==='geoUpdate'){renderGeo(d);return;}
+      if(d.action==='plugin'&&d.plugin==='netadapter'&&d.method==='pluginError'){dlog('pluginError',d.pluginaction,d.status);toast('Acesso negado a este dispositivo ('+(d.pluginaction||'?')+')',true);return;} // P0-1 ACL
       if(d.action==='plugin'&&d.plugin==='netadapter'&&d.method==='catalog'){/* não usado no device */}
     }catch(e){}
   });
@@ -437,6 +438,16 @@ function handleResult(d){
     case 'getWifiStatus': renderWifiStatus(r); break;
     case 'getWifiNetworks': renderWifiNetworks(r||[]); break;
     case 'getWifiProfiles': renderWifiProfiles(r||[]); break;
+    case 'revealWifiPassword': { // P1-a: substitui a máscara pela senha em claro
+      var code=null, name=r&&r.name||'';
+      document.querySelectorAll('code[id^="wifikey-"]').forEach(function(el){
+        var pn=decodeURIComponent(el.id.replace('wifikey-',''));
+        var src=(_wifiProfiles||[]).filter(function(w){return w.name===name;})[0];
+        if(src&&pn===name) code=el;
+      });
+      if(code&&r&&r.hasPassword){code.textContent=r.password;code.style.color='#c62828';}
+      break;
+    }
     case 'getIpInfo': renderIpInfo(r); break;
   }
 }
@@ -489,13 +500,14 @@ function renderAdapters(list){
       +'<td class="muted">'+esc(ips)+(a.gateway?(' <br>GW: '+esc(a.gateway)):'')+'</td>'
       +'<td class="muted">'+dnsC+' servidor(es)'+(a.profile?(' · '+esc(a.profile)):'')+'</td>'
       +'<td>'
-      +'<button class="btn btn-sm" onclick="showIpDlgFor(\''+esc(a.name)+'\',\'IPv4\')">IP…</button> '
-      +'<button class="btn btn-sm" onclick="showMacDlg(\''+esc(a.name)+'\')">MAC</button> '
+      // P2-b: data-attrs + delegação
+      +'<button class="btn btn-sm" data-act="showIpDlgFor" data-name="'+esc(a.name)+'" data-fam="IPv4">IP…</button> '
+      +'<button class="btn btn-sm" data-act="showMacDlg" data-name="'+esc(a.name)+'">MAC</button> '
       +(a.status==='Disabled'
-        ?'<button class="btn btn-sm btn-primary" data-op="enableAdapter" onclick="doEnable(\''+esc(a.name)+'\')">Ativar</button> '
-        :'<button class="btn btn-sm btn-danger" data-op="disableAdapter" onclick="doDisable(\''+esc(a.name)+'\')">Desativar</button> ')
-      +'<button class="btn btn-sm" onclick="showRename(\''+esc(a.name)+'\')">Renomear</button> '
-      +'<button class="btn btn-sm" onclick="gotoAdv(\''+esc(a.name)+'\')">Avançado</button>'
+        ?'<button class="btn btn-sm btn-primary" data-op="enableAdapter" data-act="doEnable" data-name="'+esc(a.name)+'">Ativar</button> '
+        :'<button class="btn btn-sm btn-danger" data-op="disableAdapter" data-act="doDisable" data-name="'+esc(a.name)+'">Desativar</button> ')
+      +'<button class="btn btn-sm" data-act="showRename" data-name="'+esc(a.name)+'">Renomear</button> '
+      +'<button class="btn btn-sm" data-act="gotoAdv" data-name="'+esc(a.name)+'">Avançado</button>'
       +'</td></tr>';
   });
   h+='</tbody></table>';
@@ -535,7 +547,7 @@ function renderIpDetail(){
     +'<td>'+esc((a.dnsServers||[]).join(', ')||'—')+'</td>'
     +'<td>'+(a.dhcp==='Enabled'?'<span class="badge ok">DHCP</span>':'<span class="badge warn">Estático</span>')+'</td>'
     +'<td>'
-    +'<button class="btn btn-sm btn-primary" onclick="showIpDlgFor(\''+esc(n)+'\',\'IPv4\')">Estático…</button> '
+    +'<button class="btn btn-sm btn-primary" data-act="showIpDlgFor" data-name="'+esc(n)+'" data-fam="IPv4">Estático…</button> '
     +(a.dhcp==='Enabled'?'':'<button class="btn btn-sm" data-op="setDhcp" onclick="doDhcp(\'IPv4\')">DHCP</button>')
     +'</td></tr>'
     +'<tr><td><b>IPv6</b></td>'
@@ -544,7 +556,7 @@ function renderIpDetail(){
     +'<td>'+esc((a.dnsServers6||[]).join(', ')||'—')+'</td>'
     +'<td>'+(a.dhcp6==='Enabled'?'<span class="badge ok">Automático</span>':'<span class="badge warn">Estático</span>')+'<br><span class="muted">RD: '+esc(a.routerDiscovery||'—')+'</span></td>'
     +'<td>'
-    +'<button class="btn btn-sm btn-primary" onclick="showIpDlgFor(\''+esc(n)+'\',\'IPv6\')">Estático…</button> '
+    +'<button class="btn btn-sm btn-primary" data-act="showIpDlgFor" data-name="'+esc(n)+'" data-fam="IPv6">Estático…</button> '
     +(a.dhcp6==='Enabled'?'':'<button class="btn btn-sm" data-op="setDhcp6" onclick="doDhcp(\'IPv6\')">Automático</button>')
     +'</td></tr>'
     +'</tbody></table>'
@@ -675,7 +687,7 @@ function renderAdvProps(list){
   list.forEach(function(p,i){
     h+='<tr><td><b>'+esc(p.displayName)+'</b><br><span class="muted">'+esc(p.registryKeyword)+'</span></td>'
       +'<td>'+esc(p.displayValue)+'</td>'
-      +'<td><button class="btn btn-sm" onclick="showAdvDlg('+i+')">Alterar</button></td></tr>';
+      +'<td><button class="btn btn-sm" data-act="showAdvDlg" data-idx="'+i+'">Alterar</button></td></tr>'; // P2-b
   });
   h+='</tbody></table>';
   $('advProps').innerHTML=h;
@@ -721,7 +733,8 @@ function renderBindings(list){
   list.forEach(function(b){
     h+='<tr><td>'+esc(b.DisplayName||b.displayName)+'</td><td class="muted">'+esc(b.ComponentID||b.componentID)+'</td>'
       +'<td>'+(b.Enabled?'<span class="badge ok">ativo</span>':'<span class="badge off">inativo</span>')+'</td>'
-      +'<td><button class="btn btn-sm'+(b.Enabled?' btn-danger':'')+'" onclick="toggleBinding(\''+esc(b.ComponentID||b.componentID)+'\','+(b.Enabled?'false':'true')+')">('+(b.Enabled?'Desativar':'Ativar')+')</button></td></tr>';
+      // P2-b: data-attrs
+      +'<td><button class="btn btn-sm'+(b.Enabled?' btn-danger':'')+'" data-act="toggleBinding" data-name="'+esc(b.ComponentID||b.componentID)+'" data-enable="'+(b.Enabled?'false':'true')+'">('+(b.Enabled?'Desativar':'Ativar')+')</button></td></tr>';
   });
   h+='</tbody></table>';
   $('bindingList').innerHTML=h;
@@ -819,11 +832,11 @@ function renderHosts(list){
     var names=e.disabled?'<span class="muted">'+esc(String(e.raw||'').trim())+'</span>':esc(e.hostnames||'—');
     var acts='—';
     if(managed&&e.id){
-      acts='<button class="btn btn-sm" onclick="showHostsDlg(\''+esc(e.id)+'\')">Editar</button> '
+      acts='<button class="btn btn-sm" data-act="showHostsDlg" data-name="'+esc(e.id)+'">Editar</button> ' // P2-b
           +(e.disabled
-            ?'<button class="btn btn-sm btn-primary" onclick="doToggleHosts(\''+esc(e.id)+'\',true)">Ativar</button> '
-            :'<button class="btn btn-sm" onclick="doToggleHosts(\''+esc(e.id)+'\',false)">Desativar</button> ')
-          +'<button class="btn btn-sm btn-danger" onclick="doRemoveHosts(\''+esc(e.id)+'\')">Excluir</button>';
+            ?'<button class="btn btn-sm btn-primary" data-act="doToggleHosts" data-name="'+esc(e.id)+'" data-enable="true">Ativar</button> '
+            :'<button class="btn btn-sm" data-act="doToggleHosts" data-name="'+esc(e.id)+'" data-enable="false">Desativar</button> ')
+          +'<button class="btn btn-sm btn-danger" data-act="doRemoveHosts" data-name="'+esc(e.id)+'">Excluir</button>'; // P2-b
     } else if(e.disabled&&!managed){
       src='<span class="badge off">manual (comentada)</span>';
     }
@@ -931,16 +944,43 @@ function renderWifiNetworks(list){
   $('wifiScanInfo').textContent=list.length+' rede(s)';
 }
 function renderWifiProfiles(list){
+  _wifiProfiles=list;
   if(!list.length){$('wifiProfiles').innerHTML='<div class="empty">Nenhum perfil Wi-Fi salvo.</div>';return;}
   var h='<table class="tbl"><thead><tr><th>Perfil</th><th>Autenticação</th><th>Criptografia</th><th>Senha</th></tr></thead><tbody>';
   list.forEach(function(p){
     h+='<tr><td><b>'+esc(p.name)+'</b></td><td>'+esc(p.auth||'—')+'</td><td>'+esc(p.cipher||'—')+'</td>'
-      +'<td>'+(p.hasPassword?'<code>'+esc(p.password)+'</code>':'<span class="muted">rede aberta</span>')+'</td></tr>';
+      +'<td>'+(p.hasPassword
+        ?'<code id="wifikey-'+esc(p.name)+'">'+esc(p.password||'••••••••')+'</code> <button class="btn btn-sm" data-op="revealWifiPassword" data-act="revealWifiPassword" data-name="'+esc(p.name)+'">Revelar</button>' // P2-b + P1-a: mascarada até reveal (wifi_secrets)
+        :'<span class="muted">rede aberta</span>')+'</td></tr>';
   });
   h+='</tbody></table>';
   $('wifiProfiles').innerHTML=h;
   $('wifiProfInfo').textContent=list.length+' perfil(is)';
 }
+var _wifiProfiles=[];
+function revealWifiPassword(name,btn){ // P1-a: pede a senha em claro (server exige wifi_secrets; auditado)
+  if(btn)btn.disabled=true;
+  send('revealWifiPassword',{name:name});
+}
+
+// P2-b — delegação de clicks (sem onclick inline com valores dinâmicos)
+document.addEventListener('click',function(ev){
+  var b=ev.target&&ev.target.closest?ev.target.closest('button[data-act],[data-act="openDevice"]'):null;
+  if(!b)return;
+  var act=b.dataset.act,n=b.dataset.name;
+  if(act==='showIpDlgFor')showIpDlgFor(n,b.dataset.fam);
+  else if(act==='showMacDlg')showMacDlg(n);
+  else if(act==='doEnable')doEnable(n);
+  else if(act==='doDisable')doDisable(n);
+  else if(act==='showRename')showRename(n);
+  else if(act==='gotoAdv')gotoAdv(n);
+  else if(act==='showAdvDlg')showAdvDlg(parseInt(b.dataset.idx,10));
+  else if(act==='toggleBinding')toggleBinding(n,b.dataset.enable==='true');
+  else if(act==='showHostsDlg')showHostsDlg(n);
+  else if(act==='doToggleHosts')doToggleHosts(n,b.dataset.enable==='true');
+  else if(act==='doRemoveHosts')doRemoveHosts(n);
+  else if(act==='revealWifiPassword')revealWifiPassword(n,b);
+});
 function renderIpInfo(r){
   if(!r){$('geoPanel').innerHTML='<div class="empty">sem dados</div>';return;}
   var h='';

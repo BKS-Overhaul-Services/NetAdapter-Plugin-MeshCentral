@@ -14,5 +14,7 @@
     "url": "https://github.com/BKS-Overhaul-Services/NetAdapter-Plugin-MeshCentral.git"
   },
   "versionHistoryUrl": "https://api.github.com/repos/BKS-Overhaul-Services/NetAdapter-Plugin-MeshCentral/tags",
-  "meshCentralCompat": ">=1.0.0"
+  "meshCentralCompat": ">=1.0.0",
+  "_geoLookup_doc": "OPT-IN: enriquecimento GEO/IP público via ip-api.com. Default false — nada sai do servidor nem do agente. Ao ligar (true), o IP público de cada device é enviado a ip-api.com e o free tier é HTTP-ONLY (sem TLS; HTTPS só no tier pago) — o admin que habilita assume o tráfego em claro. Rate-limit interno ~40 req/min, cache NeDB TTL 6h.",
+  "geoLookup": false
 }
