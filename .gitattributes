@@ -1,2 +1,4 @@
-# Auto detect text files and perform LF normalization
-* text=auto
+# Vendor plugin-lib e testes: hash sha384 do header e regexes de extração assumem LF
+vendor/** eol=lf
+modules_meshcore/** eol=lf
+tests/** eol=lf
